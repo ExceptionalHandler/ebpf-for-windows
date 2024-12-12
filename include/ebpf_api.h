@@ -370,6 +370,27 @@ extern "C"
         EBPF_NO_EXCEPT;
 
     /**
+     * @brief Load a native image from a file and return map and program file
+     * descriptors.
+     *
+     * @param[in] file_name Path to the eBPF object file.
+     * @param[in, out] count_of_maps Size of map_fds.
+     * @param[in] map_fds Pre-allocated array for map file descriptors.
+     * @param[in, out] count_of_programs Size of program_fds.
+     * @param[in] program_fds Pre-allocated array for program file descriptors.
+     *
+     * @retval EBPF_SUCCESS The operation was successful.
+     * @retval EBPF_NO_MEMORY Either count_of_maps or count_of_programs was too small.
+     */
+    _Must_inspect_result_ ebpf_result_t
+    ebpf_object_load_native_fds(
+        _In_z_ const char* file_name,
+        _Inout_ size_t* count_of_maps,
+        _Out_writes_opt_(count_of_maps) fd_t* map_fds,
+        _Inout_ size_t* count_of_programs,
+        _Out_writes_opt_(count_of_programs) fd_t* program_fds) EBPF_NO_EXCEPT;
+
+    /**
      * @brief Attach an eBPF program.
      *
      * @param[in] program Pointer to the eBPF program.
@@ -463,6 +484,17 @@ extern "C"
     ebpf_link_close(_Frees_ptr_ struct bpf_link* link) EBPF_NO_EXCEPT;
 
     /**
+     * @brief Free bpf_link structure without cleaning up the underlying fd.
+     *
+     * The file descriptor must be closed using \ref ebpf_close_fd.
+     *
+     * @param[in] link Pointer to the bpf_link structure.
+     * @retval The file descriptor of the link.
+     */
+    fd_t
+    ebpf_link_free(_Frees_ptr_ struct bpf_link* link) EBPF_NO_EXCEPT;
+
+    /**
      * @brief Close a file descriptor. Also close the underlying handle.
      * @param [in] fd File descriptor to be closed.
      *
@@ -471,6 +503,17 @@ extern "C"
      */
     _Must_inspect_result_ ebpf_result_t
     ebpf_close_fd(fd_t fd) EBPF_NO_EXCEPT;
+
+    /**
+     * @brief Duplicate a file descriptor.
+     *
+     * @param [in] fd File descriptor to be duplicated.
+     * @param [out] dup Duplicated file descriptor.
+     *
+     * @retval EBPF_SUCCESS The operation was successful.
+     */
+    _Must_inspect_result_ ebpf_result_t
+    ebpf_dup_fd(fd_t fd, _Out_ fd_t* dup) EBPF_NO_EXCEPT;
 
     /**
      * @brief Get eBPF program type and expected attach type by name.
@@ -577,6 +620,46 @@ extern "C"
     _Must_inspect_result_ ebpf_result_t
     ebpf_ring_buffer_map_write(
         fd_t ring_buffer_map_fd, _In_reads_bytes_(data_length) const void* data, size_t data_length) EBPF_NO_EXCEPT;
+
+    /**
+     * @brief Get eBPF program type for the specified bpf program type.
+     *
+     * @param[in] program_type Bpf program type.
+     *
+     * @returns Pointer to eBPF program type, or NULL if not found.
+     */
+    _Ret_maybenull_ const ebpf_program_type_t*
+    ebpf_get_ebpf_program_type(bpf_prog_type_t bpf_program_type) EBPF_NO_EXCEPT;
+
+    /**
+     * @brief Get eBPF attach type for the specified bpf attach type.
+     *
+     * @param[in] program_type Bpf attach type.
+     *
+     * @returns Pointer to eBPF attach type, or NULL if not found.
+     */
+    _Ret_maybenull_ const ebpf_attach_type_t*
+    ebpf_get_ebpf_attach_type(bpf_attach_type_t bpf_attach_type) EBPF_NO_EXCEPT;
+
+    /**
+     * @brief Get bpf program type for the specified eBPF program type.
+     *
+     * @param[in] program_type eBPF program type GUID.
+     *
+     * @returns Bpf program type, or BPF_PROG_TYPE_UNSPEC if not found.
+     */
+    bpf_prog_type_t
+    ebpf_get_bpf_program_type(_In_ const ebpf_program_type_t* program_type) EBPF_NO_EXCEPT;
+
+    /**
+     * @brief Get bpf attach type for the specified eBPF attach type.
+     *
+     * @param[in] attach_type eBPF attach type GUID.
+     *
+     * @returns Bpf attach type, or BPF_ATTACH_TYPE_UNSPEC if not found.
+     */
+    bpf_attach_type_t
+    ebpf_get_bpf_attach_type(_In_ const ebpf_attach_type_t* ebpf_attach_type) EBPF_NO_EXCEPT;
 
 #ifdef __cplusplus
 }

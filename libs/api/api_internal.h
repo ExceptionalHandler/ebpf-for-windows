@@ -521,7 +521,10 @@ ebpf_get_next_program_id(ebpf_id_t start_id, ebpf_id_t _Out_* next_id) noexcept;
  */
 _Must_inspect_result_ ebpf_result_t
 ebpf_object_get_info_by_fd(
-    fd_t bpf_fd, _Inout_updates_bytes_to_(*info_size, *info_size) void* info, _Inout_ uint32_t* info_size) noexcept;
+    fd_t bpf_fd,
+    _Inout_updates_bytes_to_(*info_size, *info_size) void* info,
+    _Inout_ uint32_t* info_size,
+    _Out_opt_ ebpf_object_type_t* type) noexcept;
 
 /**
  * @brief Pin an object to the specified path.
@@ -707,46 +710,6 @@ ebpf_program_load_bytes(
     size_t log_buffer_size,
     _Out_ fd_t* program_fd) noexcept;
 #endif
-
-/**
- * @brief Get eBPF program type for the specified bpf program type.
- *
- * @param[in] program_type Bpf program type.
- *
- * @returns Pointer to eBPF program type, or NULL if not found.
- */
-_Ret_maybenull_ const ebpf_program_type_t*
-ebpf_get_ebpf_program_type(bpf_prog_type_t bpf_program_type) noexcept;
-
-/**
- * @brief Get eBPF attach type for the specified bpf attach type.
- *
- * @param[in] program_type Bpf attach type.
- *
- * @returns Pointer to eBPF attach type, or NULL if not found.
- */
-_Ret_maybenull_ const ebpf_attach_type_t*
-get_ebpf_attach_type(bpf_attach_type_t bpf_attach_type) noexcept;
-
-/**
- * @brief Get bpf program type for the specified eBPF program type.
- *
- * @param[in] program_type eBPF program type GUID.
- *
- * @returns Bpf program type, or BPF_PROG_TYPE_UNSPEC if not found.
- */
-bpf_prog_type_t
-get_bpf_program_type(_In_ const ebpf_program_type_t* program_type) noexcept;
-
-/**
- * @brief Get bpf attach type for the specified eBPF attach type.
- *
- * @param[in] attach_type eBPF attach type GUID.
- *
- * @returns Bpf attach type, or BPF_ATTACH_TYPE_UNSPEC if not found.
- */
-bpf_attach_type_t
-get_bpf_attach_type(_In_ const ebpf_attach_type_t* ebpf_attach_type) noexcept;
 
 /**
  * @brief Initialize the eBPF library's thread local storage.

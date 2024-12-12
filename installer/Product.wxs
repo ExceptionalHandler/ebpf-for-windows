@@ -227,7 +227,7 @@ SPDX-License-Identifier: MIT
 								Start="auto"
 								Type="ownProcess"
 								ErrorControl="normal"
-								Account="[WIX_ACCOUNT_LOCALSERVICE]"
+								Account="NT AUTHORITY\SYSTEM"
 								Vital="yes"
 								Interactive="no">
 					<ServiceConfig ServiceSid="restricted" OnInstall="yes" OnReinstall="yes" />
