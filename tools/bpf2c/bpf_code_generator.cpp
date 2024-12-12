@@ -111,10 +111,16 @@ static const std::string _predicate_format_string[] = {
     "{}{} <= {}{}", // JSLE
 };
 
-#define ADD_OPCODE(X) {static_cast<uint8_t>(X), std::string(#X)}
+#define ADD_OPCODE(X)                            \
+    {                                            \
+        static_cast<uint8_t>(X), std::string(#X) \
+    }
 
 // remove EBPF_ATOMIC_ prefix
-#define ADD_ATOMIC_OPCODE(X) {static_cast<int32_t>(X), std::string(#X).substr(12)}
+#define ADD_ATOMIC_OPCODE(X)                                \
+    {                                                       \
+        static_cast<int32_t>(X), std::string(#X).substr(12) \
+    }
 
 static std::map<int32_t, std::string> _atomic_opcode_name_strings = {
     ADD_ATOMIC_OPCODE(EBPF_ATOMIC_ADD),
@@ -1618,24 +1624,25 @@ bpf_code_generator::emit_c_code(std::ostream& output_stream)
             output_stream << INDENT INDENT " " << std::left << std::setw(stream_width) << map_type + ","
                           << "// Type of map." << std::endl;
             output_stream << INDENT INDENT " " << std::left << std::setw(stream_width)
-                          << std::to_string(entry.definition.key_size) + "," << "// Size in bytes of a map key."
-                          << std::endl;
+                          << std::to_string(entry.definition.key_size) + ","
+                          << "// Size in bytes of a map key." << std::endl;
             output_stream << INDENT INDENT " " << std::left << std::setw(stream_width)
-                          << std::to_string(entry.definition.value_size) + "," << "// Size in bytes of a map value."
-                          << std::endl;
+                          << std::to_string(entry.definition.value_size) + ","
+                          << "// Size in bytes of a map value." << std::endl;
             output_stream << INDENT INDENT " " << std::left << std::setw(stream_width)
                           << std::to_string(entry.definition.max_entries) + ","
                           << "// Maximum number of entries allowed in the map." << std::endl;
             output_stream << INDENT INDENT " " << std::left << std::setw(stream_width)
-                          << std::to_string(entry.definition.inner_map_idx) + "," << "// Inner map index." << std::endl;
+                          << std::to_string(entry.definition.inner_map_idx) + ","
+                          << "// Inner map index." << std::endl;
             output_stream << INDENT INDENT " " << std::left << std::setw(stream_width) << map_pinning + ","
                           << "// Pinning type for the map." << std::endl;
             output_stream << INDENT INDENT " " << std::left << std::setw(stream_width)
-                          << std::to_string(entry.definition.id) + "," << "// Identifier for a map template."
-                          << std::endl;
+                          << std::to_string(entry.definition.id) + ","
+                          << "// Identifier for a map template." << std::endl;
             output_stream << INDENT INDENT " " << std::left << std::setw(stream_width)
-                          << std::to_string(entry.definition.inner_id) + "," << "// The id of the inner map template."
-                          << std::endl;
+                          << std::to_string(entry.definition.inner_id) + ","
+                          << "// The id of the inner map template." << std::endl;
             output_stream << INDENT " }," << std::endl;
             output_stream << INDENT " " << name.quoted() << "}," << std::endl;
         }

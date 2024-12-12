@@ -66,8 +66,7 @@ BindMonitor_Caller(bind_md_t* ctx)
     return BIND_PERMIT;
 }
 
-__attribute__((noinline)) bind_action_t __attribute__((optnone))
-BindMonitor_Callee1(uint64_t* pid)
+__attribute__((noinline)) bind_action_t __attribute__((optnone)) BindMonitor_Callee1(uint64_t* pid)
 {
     // Use some stack space.
     volatile uint8_t inner_cookie1[2];
@@ -77,8 +76,7 @@ BindMonitor_Callee1(uint64_t* pid)
     return BindMonitor_Callee2(pid);
 }
 
-__attribute__((noinline)) bind_action_t __attribute__((optnone))
-BindMonitor_Callee2(uint64_t* pid)
+__attribute__((noinline)) bind_action_t __attribute__((optnone)) BindMonitor_Callee2(uint64_t* pid)
 {
     // Use some stack space.
     volatile uint8_t inner_cookie2[2];
@@ -88,8 +86,7 @@ BindMonitor_Callee2(uint64_t* pid)
     return BindMonitor_Callee3(pid);
 }
 
-__attribute__((noinline)) bind_action_t __attribute__((optnone))
-BindMonitor_Callee3(uint64_t* pid)
+__attribute__((noinline)) bind_action_t __attribute__((optnone)) BindMonitor_Callee3(uint64_t* pid)
 {
     // Use some stack space.
     volatile uint8_t inner_cookie3[2];
@@ -99,8 +96,7 @@ BindMonitor_Callee3(uint64_t* pid)
     return BindMonitor_Callee4(pid);
 }
 
-__attribute__((noinline)) bind_action_t __attribute__((optnone))
-BindMonitor_Callee4(uint64_t* pid)
+__attribute__((noinline)) bind_action_t __attribute__((optnone)) BindMonitor_Callee4(uint64_t* pid)
 {
     // Use some stack space.
     volatile uint8_t inner_cookie4[2];
@@ -110,8 +106,7 @@ BindMonitor_Callee4(uint64_t* pid)
     return BindMonitor_Callee5(pid);
 }
 
-__attribute__((noinline)) bind_action_t __attribute__((optnone))
-BindMonitor_Callee5(uint64_t* pid)
+__attribute__((noinline)) bind_action_t __attribute__((optnone)) BindMonitor_Callee5(uint64_t* pid)
 {
     // Use some stack space.
     volatile uint8_t inner_cookie5[2];
@@ -121,8 +116,7 @@ BindMonitor_Callee5(uint64_t* pid)
     return BindMonitor_Callee6(pid);
 }
 
-__attribute__((noinline)) bind_action_t __attribute__((optnone))
-BindMonitor_Callee6(uint64_t* pid)
+__attribute__((noinline)) bind_action_t __attribute__((optnone)) BindMonitor_Callee6(uint64_t* pid)
 {
     // Use some stack space.
     volatile uint8_t inner_cookie6[2];
@@ -132,8 +126,7 @@ BindMonitor_Callee6(uint64_t* pid)
     return BindMonitor_Callee7(pid);
 }
 
-__attribute__((noinline)) bind_action_t __attribute__((optnone))
-BindMonitor_Callee7(uint64_t* pid)
+__attribute__((noinline)) bind_action_t __attribute__((optnone)) BindMonitor_Callee7(uint64_t* pid)
 {
     // Use some stack space.
     volatile uint8_t inner_cookie2[2];
