@@ -1318,3 +1318,15 @@ TEST_CASE("Test program order", "[native_tests]")
     // Clean up.
     bpf_object__close(object);
 }
+
+TEST_CASE("get_handle_from_fd", "")
+{
+    fd_t map_fd1 = bpf_map_create(BPF_MAP_TYPE_ARRAY, "map", sizeof(uint32_t), sizeof(uint32_t), 1, nullptr);
+    REQUIRE(map_fd1 > 0);
+
+    intptr_t handle;
+
+    REQUIRE(ebpf_get_handle_from_fd(map_fd1, &handle) == EBPF_SUCCESS);
+    REQUIRE(handle != (intptr_t)(-1));
+    _close(map_fd1);
+}

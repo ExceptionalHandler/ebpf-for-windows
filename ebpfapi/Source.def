@@ -123,6 +123,7 @@ EXPORTS
     ebpf_get_program_info_from_verifier
     ebpf_get_program_type_by_name
     ebpf_get_program_type_name
+    ebpf_get_handle_from_fd
     ebpf_link_close
     ebpf_link_free
     ebpf_object_load_native_fds
