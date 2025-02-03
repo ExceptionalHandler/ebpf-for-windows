@@ -30,7 +30,6 @@ EnqueEvent(process_info_t* process_info, wchar_t* path)
     return 1;
 }
 
-
 extern "C" __declspec(dllexport) int
 GetEvent(void* dest)
 {
