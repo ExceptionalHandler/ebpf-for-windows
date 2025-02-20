@@ -174,7 +174,6 @@ obj_get_info_by_fd(sys_bpf_obj_info_attr_t* attr)
 int
 bpf(int cmd, union bpf_attr* attr, unsigned int size)
 {
-    MessageBoxW(NULL, L"MB_OK", L"MB_OK", MB_OK);
     // bpf() is ABI compatible with the Linux bpf() syscall.
     //
     // * Do not return errors via errno.

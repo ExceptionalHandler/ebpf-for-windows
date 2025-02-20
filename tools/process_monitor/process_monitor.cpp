@@ -107,14 +107,14 @@ load(int argc, char** argv)
     UNREFERENCED_PARAMETER(argc);
     UNREFERENCED_PARAMETER(argv);
 
-    object = bpf_object__open("process_monitor.o");
+    object = bpf_object__open("process_monitor.sys");
     if (object == nullptr) {
         printf("\nAm here\n");
         fprintf(stderr, "Failed to open process_monitor eBPF program\n");
         return 1;
     }
 
-    result = ebpf_object_set_execution_type(object, EBPF_EXECUTION_JIT);
+    result = ebpf_object_set_execution_type(object, EBPF_EXECUTION_NATIVE);
     if (result != EBPF_SUCCESS) {
         fprintf(stderr, "Failed to set execution type\n");
         return 1;
@@ -351,6 +351,7 @@ GetOverlappedEvent() {
 void
 RecvEvents2()
 {
+    image_fd = bpf_obj_get((char*)process_map);
     fd_t ringBuf_fd = bpf_obj_get((char*)process_ringbuf);
     if (ringBuf_fd == ebpf_fd_invalid) {
         fprintf(stderr, "Failed to get  up eBPF ringbuf\n");
