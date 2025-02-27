@@ -2105,7 +2105,11 @@ _ebpf_core_protocol_ring_buffer_map_async_query(
 
     ebpf_map_t* map = NULL;
     bool reference_taken = FALSE;
-
+    EBPF_LOG_MESSAGE_UINT64(
+        EBPF_TRACELOG_LEVEL_ERROR,
+        EBPF_TRACELOG_KEYWORD_CORE,
+        "Handle = ", request->map_handle);
+    
     ebpf_result_t result =
         EBPF_OBJECT_REFERENCE_BY_HANDLE(request->map_handle, EBPF_OBJECT_MAP, (ebpf_core_object_t**)&map);
     if (result != EBPF_SUCCESS) {

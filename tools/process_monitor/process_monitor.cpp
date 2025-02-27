@@ -10,7 +10,7 @@
 #include <windows.h>
 #include <io.h>
 #include <iostream>
-#include <string>
+#include <string> 
 #include <thread>
 
 const char* process_map = "process::process_map";
@@ -229,6 +229,7 @@ typedef struct
 } process_info_t;
 
 fd_t image_fd = 0;
+fd_t cmd_fd = 0;
 
 int
 process_creation_callback(_Inout_ void* ctx, _In_opt_ void* data, size_t size)
@@ -351,7 +352,10 @@ GetOverlappedEvent() {
 void
 RecvEvents2()
 {
+    MessageBox(NULL, L"START", L"Start?", MB_OK);
+
     image_fd = bpf_obj_get((char*)process_map);
+    cmd_fd = bpf_obj_get((char*)command_map);
     fd_t ringBuf_fd = bpf_obj_get((char*)process_ringbuf);
     if (ringBuf_fd == ebpf_fd_invalid) {
         fprintf(stderr, "Failed to get  up eBPF ringbuf\n");
