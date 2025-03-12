@@ -33,12 +33,10 @@ extern "C"
 #define AFFINITY_MASK(n) ((ULONG_PTR)(1) << (n))
 #endif
 
-#define EBPF_UTF8_STRING_FROM_CONST_STRING(x) \
-    {                                         \
-        ((uint8_t*)(x)), sizeof((x)) - 1      \
-    }
+#define EBPF_UTF8_STRING_FROM_CONST_STRING(x) {((uint8_t*)(x)), sizeof((x)) - 1}
 
 #define EBPF_NS_PER_FILETIME 100
+#define EBPF_FILETIME_PER_MS 10000
 
     typedef enum _ebpf_code_integrity_state
     {
@@ -239,6 +237,31 @@ extern "C"
      * @param[in] old_irql The old IRQL.
      */
     _IRQL_requires_max_(HIGH_LEVEL) void ebpf_lower_irql(_In_ _Notliteral_ _IRQL_restores_ uint8_t old_irql);
+
+    /**
+     * @brief Raise the CPU's IRQL to DISPATCH_LEVEL if it is below DISPATCH_LEVEL.
+     *
+     * First checks if the IRQL is below DISPATCH_LEVEL to avoid the overhead of
+     * calling KeRaiseIrqlToDpcLevel() if it is not needed.
+     *
+     * @return The previous IRQL.
+     */
+    _IRQL_requires_max_(DISPATCH_LEVEL) _IRQL_saves_ _IRQL_raises_(DISPATCH_LEVEL) KIRQL
+        ebpf_raise_irql_to_dispatch_if_needed();
+
+    /**
+     * @brief Lower the CPU's IRQL to the previous IRQL if previous level was below DISPATCH_LEVEL.
+     *
+     * First checks if the IRQL is below DISPATCH_LEVEL to avoid the overhead of
+     * calling KeLowerIrql() if it is not needed.
+     *
+     * Note: The compiler fails to verify that irql is restored, so warning C28167 may need to be disabled around
+     * functions that use this.
+     *
+     * @param[in] previous_irql The previous IRQL.
+     */
+    _IRQL_requires_(DISPATCH_LEVEL) void ebpf_lower_irql_from_dispatch_if_needed(
+        _When_(previous_irql < DISPATCH_LEVEL, _IRQL_restores_) KIRQL previous_irql);
 
     /**
      * @brief Query the platform for the total number of CPUs.
@@ -631,29 +654,6 @@ extern "C"
     _Must_inspect_result_ ebpf_result_t
     ebpf_validate_security_descriptor(
         _In_ const ebpf_security_descriptor_t* security_descriptor, size_t security_descriptor_length);
-
-    /**
-     * @brief Return time elapsed since boot in units of 100 nanoseconds.
-     *
-     * @param[in] include_suspended_time Include time the system spent in a suspended state.
-     * @return Time elapsed since boot in 100 nanosecond units.
-     */
-    EBPF_INLINE_HINT
-    uint64_t
-    ebpf_query_time_since_boot_precise(bool include_suspended_time);
-
-    /**
-     * @brief Return time elapsed since boot in units of 100 nanoseconds.
-     * This function is faster than ebpf_query_time_since_boot_precise() but may not
-     * be as accurate.
-     *
-     * @param[in] include_suspended_time Include time the system spent in a suspended state.
-     *
-     * @return Time elapsed since boot in 100 nanosecond units.
-     */
-    EBPF_INLINE_HINT
-    uint64_t
-    ebpf_query_time_since_boot_approximate(bool include_suspended_time);
 
     /**
      * @brief Affinitize the current thread to a specific CPU by index and return the old affinity.

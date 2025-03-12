@@ -119,6 +119,25 @@ _IRQL_requires_max_(HIGH_LEVEL) void ebpf_lower_irql(_In_ _Notliteral_ _IRQL_res
     KeLowerIrql(old_irql);
 }
 
+_IRQL_requires_max_(DISPATCH_LEVEL) _IRQL_saves_ _IRQL_raises_(DISPATCH_LEVEL)
+KIRQL
+ebpf_raise_irql_to_dispatch_if_needed()
+{
+    KIRQL old_irql = KeGetCurrentIrql();
+    if (old_irql < DISPATCH_LEVEL) {
+        old_irql = KeRaiseIrqlToDpcLevel();
+    }
+    return old_irql;
+}
+
+_IRQL_requires_(DISPATCH_LEVEL) void ebpf_lower_irql_from_dispatch_if_needed(
+    _When_(previous_irql < DISPATCH_LEVEL, _IRQL_restores_) KIRQL previous_irql)
+{
+    if (previous_irql < DISPATCH_LEVEL) {
+        KeLowerIrql(previous_irql);
+    }
+}
+
 bool
 ebpf_should_yield_processor()
 {
@@ -220,34 +239,6 @@ ebpf_allocate_process_state()
     // Skipping fault injection as call to ebpf_allocate() covers it.
     ebpf_process_state_t* state = (ebpf_process_state_t*)ebpf_allocate(sizeof(ebpf_process_state_t));
     return state;
-}
-
-uint64_t
-ebpf_query_time_since_boot_precise(bool include_suspended_time)
-{
-    uint64_t qpc_time;
-    if (include_suspended_time) {
-        // KeQueryUnbiasedInterruptTimePrecise returns the current interrupt-time count in 100-nanosecond units.
-        // Unbiased Interrupt time is the total time since boot including time spent suspended.
-        // https://docs.microsoft.com/en-us/windows-hardware/drivers/ddi/wdm/nf-wdm-kequeryunbiasedinterrupttimeprecise
-        return KeQueryUnbiasedInterruptTimePrecise(&qpc_time);
-    } else {
-        // KeQueryInterruptTimePrecise returns the current interrupt-time count in 100-nanosecond units.
-        // (Biased) Interrupt time is the total time since boot excluding time spent suspended.        //
-        // https://docs.microsoft.com/en-us/windows-hardware/drivers/ddi/wdm/nf-wdm-kequeryinterrupttimeprecise
-        return KeQueryInterruptTimePrecise(&qpc_time);
-    }
-}
-
-uint64_t
-ebpf_query_time_since_boot_approximate(bool include_suspend_time)
-{
-    if (include_suspend_time) {
-        ebpf_assert(!"Include suspend time not supported on this platform.");
-        return 0;
-    } else {
-        return KeQueryInterruptTime();
-    }
 }
 
 MDL*

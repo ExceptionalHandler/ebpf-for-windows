@@ -295,7 +295,7 @@ _complete_async_io(OVERLAPPED* overlapped, size_t output_buffer_length)
 {
     std::unique_lock lock(_overlapped_buffers_mutex);
     auto it = _overlapped_buffers.find(overlapped);
-    REQUIRE(it != _overlapped_buffers.end());
+    assert(it != _overlapped_buffers.end());
     if (it->second.output_buffer != nullptr) {
         memcpy(it->second.output_buffer, it->second.buffer.data(), output_buffer_length);
     }
@@ -473,20 +473,24 @@ GlueDeviceIoControl(
     unsigned long sharedBufferSize = (input_buffer_size > output_buffer_size) ? input_buffer_size : output_buffer_size;
     const void* local_input_buffer = nullptr;
     void* local_output_buffer = nullptr;
+    std::vector<uint8_t> synchronousBuffer;
+    std::vector<uint8_t>* sharedBuffer = nullptr;
 
     // To correctly emulate the kernel execution context, we need to use the same buffer
     // for both input and output.  So we allocate a buffer that is large enough to hold
     // either the input or output, and then use that buffer for both.
     if (overlapped) {
         std::unique_lock lock(_overlapped_buffers_mutex);
-        REQUIRE(_overlapped_buffers.find(overlapped) == _overlapped_buffers.end());
+        if (_overlapped_buffers.find(overlapped) != _overlapped_buffers.end()) {
+            result = EBPF_INVALID_ARGUMENT;
+            goto Fail;
+        }
         _overlapped_buffers[overlapped] = {{}, (uint8_t*)output_buffer, output_buffer_size};
     }
-    std::vector<uint8_t> synchronousBuffer;
 
-    std::vector<uint8_t>& sharedBuffer = overlapped ? _overlapped_buffers[overlapped].buffer : synchronousBuffer;
+    sharedBuffer = overlapped ? &_overlapped_buffers[overlapped].buffer : &synchronousBuffer;
 
-    sharedBuffer.resize(sharedBufferSize);
+    (*sharedBuffer).resize(sharedBufferSize);
 
     result = ebpf_core_get_protocol_handler_properties(request_id, &minimum_request_size, &minimum_reply_size, &async);
     if (result != EBPF_SUCCESS) {
@@ -516,10 +520,10 @@ GlueDeviceIoControl(
     // In the kernel execution context, the request and reply share
     // the same memory.  So to catch bugs that only show up in that
     // case, we force the same here.
-    sharedBuffer.resize(sharedBufferSize);
-    memcpy(sharedBuffer.data(), user_request, input_buffer_size);
-    local_input_buffer = sharedBuffer.data();
-    local_output_buffer = (minimum_reply_size > 0) ? sharedBuffer.data() : nullptr;
+    (*sharedBuffer).resize(sharedBufferSize);
+    memcpy((*sharedBuffer).data(), user_request, input_buffer_size);
+    local_input_buffer = (*sharedBuffer).data();
+    local_output_buffer = (minimum_reply_size > 0) ? (*sharedBuffer).data() : nullptr;
 
     result = ebpf_core_invoke_protocol_handler(
         request_id,
@@ -531,7 +535,7 @@ GlueDeviceIoControl(
         _complete_overlapped);
 
     if (!async && minimum_reply_size > 0) {
-        memcpy(user_reply, sharedBuffer.data(), output_buffer_size);
+        memcpy(user_reply, (*sharedBuffer).data(), output_buffer_size);
     }
 
     // If the request failed synchronously, complete the overlapped.
@@ -786,8 +790,6 @@ _test_helper_end_to_end::~_test_helper_end_to_end()
         duplicate_handle_handler = nullptr;
 
         _expect_native_module_load_failures = false;
-
-        set_verification_in_progress(false);
     } catch (...) {
     }
 }
@@ -807,28 +809,29 @@ _test_helper_libbpf::initialize()
 
     xdp_program_info = new program_info_provider_t();
     REQUIRE(xdp_program_info->initialize(EBPF_PROGRAM_TYPE_XDP) == EBPF_SUCCESS);
-    xdp_hook = new single_instance_hook_t(EBPF_PROGRAM_TYPE_XDP, EBPF_ATTACH_TYPE_XDP);
+    xdp_hook = new single_instance_hook_t(EBPF_PROGRAM_TYPE_XDP, EBPF_ATTACH_TYPE_XDP, BPF_LINK_TYPE_XDP);
     REQUIRE(xdp_hook->initialize() == EBPF_SUCCESS);
 
     bind_program_info = new program_info_provider_t();
     REQUIRE(bind_program_info->initialize(EBPF_PROGRAM_TYPE_BIND) == EBPF_SUCCESS);
-    bind_hook = new single_instance_hook_t(EBPF_PROGRAM_TYPE_BIND, EBPF_ATTACH_TYPE_BIND);
+    bind_hook = new single_instance_hook_t(EBPF_PROGRAM_TYPE_BIND, EBPF_ATTACH_TYPE_BIND, BPF_LINK_TYPE_PLAIN);
     REQUIRE(bind_hook->initialize() == EBPF_SUCCESS);
 
     cgroup_sock_addr_program_info = new program_info_provider_t();
     REQUIRE(cgroup_sock_addr_program_info->initialize(EBPF_PROGRAM_TYPE_CGROUP_SOCK_ADDR) == EBPF_SUCCESS);
-    cgroup_inet4_connect_hook =
-        new single_instance_hook_t(EBPF_PROGRAM_TYPE_CGROUP_SOCK_ADDR, EBPF_ATTACH_TYPE_CGROUP_INET4_CONNECT);
+    cgroup_inet4_connect_hook = new single_instance_hook_t(
+        EBPF_PROGRAM_TYPE_CGROUP_SOCK_ADDR, EBPF_ATTACH_TYPE_CGROUP_INET4_CONNECT, BPF_LINK_TYPE_CGROUP);
     REQUIRE(cgroup_inet4_connect_hook->initialize() == EBPF_SUCCESS);
 
     sample_program_info = new program_info_provider_t();
     REQUIRE(sample_program_info->initialize(EBPF_PROGRAM_TYPE_SAMPLE) == EBPF_SUCCESS);
-    sample_hook = new single_instance_hook_t(EBPF_PROGRAM_TYPE_SAMPLE, EBPF_ATTACH_TYPE_SAMPLE);
+    sample_hook = new single_instance_hook_t(EBPF_PROGRAM_TYPE_SAMPLE, EBPF_ATTACH_TYPE_SAMPLE, BPF_LINK_TYPE_PLAIN);
     REQUIRE(sample_hook->initialize() == EBPF_SUCCESS);
 
     xdp_test_program_info = new program_info_provider_t();
     REQUIRE(xdp_test_program_info->initialize(EBPF_PROGRAM_TYPE_XDP_TEST) == EBPF_SUCCESS);
-    xdp_test_hook = new single_instance_hook_t(EBPF_PROGRAM_TYPE_XDP_TEST, EBPF_ATTACH_TYPE_XDP_TEST);
+    xdp_test_hook =
+        new single_instance_hook_t(EBPF_PROGRAM_TYPE_XDP_TEST, EBPF_ATTACH_TYPE_XDP_TEST, BPF_LINK_TYPE_XDP);
     REQUIRE(xdp_test_hook->initialize() == EBPF_SUCCESS);
 }
 

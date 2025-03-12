@@ -7,6 +7,7 @@
 #include "ebpf_nethooks.h"
 #include "ebpf_platform.h"
 #include "ebpf_program_types.h"
+#include "ebpf_windows.h"
 #include "net_ebpf_ext_program_info.h"
 #include "net_ebpf_ext_xdp_hooks.h"
 #include "sample_ext_program_info.h"
@@ -132,7 +133,10 @@ typedef class _hook_helper
 typedef class _single_instance_hook : public _hook_helper
 {
   public:
-    _single_instance_hook(ebpf_program_type_t program_type, ebpf_attach_type_t attach_type)
+    _single_instance_hook(
+        ebpf_program_type_t program_type,
+        ebpf_attach_type_t attach_type,
+        bpf_link_type link_type = BPF_LINK_TYPE_UNSPEC)
         : _hook_helper{attach_type}, client_binding_context(nullptr), client_data(nullptr),
           client_dispatch_table(nullptr), link_object(nullptr), client_registration_instance(nullptr),
           nmr_binding_handle(nullptr), nmr_provider_handle(nullptr)
@@ -141,6 +145,7 @@ typedef class _single_instance_hook : public _hook_helper
         attach_provider_data.supported_program_type = program_type;
         attach_provider_data.bpf_attach_type = ebpf_get_bpf_attach_type(&attach_type);
         this->attach_type = attach_type;
+        attach_provider_data.link_type = link_type;
         module_id.Guid = attach_type;
     }
     ebpf_result_t
@@ -279,6 +284,12 @@ typedef class _single_instance_hook : public _hook_helper
         return batch_end_function(state);
     }
 
+    const ebpf_extension_data_t*
+    get_client_data() const
+    {
+        return client_data;
+    }
+
   private:
     static NTSTATUS
     provider_attach_client_callback(
@@ -301,6 +312,8 @@ typedef class _single_instance_hook : public _hook_helper
         hook->client_binding_context = client_binding_context;
         hook->nmr_binding_handle = nmr_binding_handle;
         hook->client_dispatch_table = (ebpf_extension_dispatch_table_t*)client_dispatch;
+        hook->client_data =
+            reinterpret_cast<const ebpf_extension_data_t*>(client_registration_instance->NpiSpecificCharacteristics);
         *provider_binding_context = provider_context;
         *provider_dispatch = NULL;
         return STATUS_SUCCESS;

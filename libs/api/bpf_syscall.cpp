@@ -73,7 +73,7 @@ template <typename T> class ExtensibleStruct
 };
 
 static bool
-is_valid_name(_In_opt_z_ const char* name, _Outptr_opt_ size_t* length)
+is_valid_name(_In_z_ const char* name, _Out_opt_ size_t* length)
 {
     size_t name_length = strnlen(name, SYS_BPF_OBJ_NAME_LEN);
 
@@ -85,31 +85,24 @@ is_valid_name(_In_opt_z_ const char* name, _Outptr_opt_ size_t* length)
 }
 
 static void
-convert_to_map_info(struct bpf_map_info* bpf, const sys_bpf_map_info_t* sys);
+convert_to_map_info(_Out_ struct bpf_map_info* bpf, _In_ const sys_bpf_map_info_t* sys);
 static void
-convert_to_sys_map_info(sys_bpf_map_info_t* sys, const struct bpf_map_info* bpf);
+convert_to_sys_map_info(_Out_ sys_bpf_map_info_t* sys, _In_ const struct bpf_map_info* bpf);
 static void
-convert_to_prog_info(struct bpf_prog_info* bpf, const sys_bpf_prog_info_t* sys);
+convert_to_prog_info(_Out_ struct bpf_prog_info* bpf, _In_ const sys_bpf_prog_info_t* sys);
 static void
-convert_to_sys_prog_info(sys_bpf_prog_info_t* sys, const struct bpf_prog_info* bpf);
+convert_to_sys_prog_info(_Out_ sys_bpf_prog_info_t* sys, _In_ const struct bpf_prog_info* bpf);
 static void
-convert_to_link_info(struct bpf_link_info* bpf, const sys_bpf_link_info_t* sys);
+convert_to_link_info(_Out_ struct bpf_link_info* bpf, _In_ const sys_bpf_link_info_t* sys);
 static void
-convert_to_sys_link_info(sys_bpf_link_info_t* sys, const struct bpf_link_info* bpf);
+convert_to_sys_link_info(_Out_ sys_bpf_link_info_t* sys, _In_ const struct bpf_link_info* bpf);
 
 static int
-obj_get_info_by_fd(sys_bpf_obj_info_attr_t* attr)
+obj_get_info_by_fd(_In_ sys_bpf_obj_info_attr_t* attr)
 {
-    union
-    {
-        struct bpf_map_info map;
-        struct bpf_prog_info prog;
-        struct bpf_link_info link;
-    } tmp = {};
-    uint32_t info_size = sizeof(tmp);
     ebpf_object_type_t type;
 
-    ebpf_result_t result = ebpf_object_get_info_by_fd((fd_t)attr->bpf_fd, &tmp, &info_size, &type);
+    ebpf_result_t result = ebpf_object_get_info_by_fd((fd_t)attr->bpf_fd, nullptr, 0, &type);
     if (result != EBPF_SUCCESS) {
         return libbpf_result_err(result);
     }
@@ -117,52 +110,55 @@ obj_get_info_by_fd(sys_bpf_obj_info_attr_t* attr)
     switch (type) {
     case EBPF_OBJECT_MAP: {
         ExtensibleStruct<sys_bpf_map_info_t> info((void*)attr->info, (size_t)attr->info_len);
+        struct bpf_map_info map;
 
-        convert_to_map_info(&tmp.map, &info);
+        convert_to_map_info(&map, &info);
 
-        info_size = sizeof(tmp.map);
-        result = ebpf_object_get_info_by_fd((fd_t)attr->bpf_fd, &tmp.map, &info_size, NULL);
+        uint32_t info_size = sizeof(map);
+        result = ebpf_object_get_info_by_fd((fd_t)attr->bpf_fd, &map, &info_size, nullptr);
         if (result != EBPF_SUCCESS) {
             return libbpf_result_err(result);
         }
 
-        convert_to_sys_map_info(&info, &tmp.map);
+        convert_to_sys_map_info(&info, &map);
         return 0;
     }
 
     case EBPF_OBJECT_PROGRAM: {
         ExtensibleStruct<sys_bpf_prog_info_t> info((void*)attr->info, (size_t)attr->info_len);
         sys_bpf_prog_info_t* sys = &info;
+        struct bpf_prog_info prog;
 
         if (sys->jited_prog_len != 0 || sys->xlated_prog_len != 0 || sys->jited_prog_insns != 0 ||
             sys->xlated_prog_insns != 0) {
             return -EINVAL;
         }
 
-        convert_to_prog_info(&tmp.prog, &info);
+        convert_to_prog_info(&prog, &info);
 
-        info_size = sizeof(tmp.prog);
-        result = ebpf_object_get_info_by_fd((fd_t)attr->bpf_fd, &tmp.prog, &info_size, NULL);
+        uint32_t info_size = sizeof(prog);
+        result = ebpf_object_get_info_by_fd((fd_t)attr->bpf_fd, &prog, &info_size, nullptr);
         if (result != EBPF_SUCCESS) {
             return libbpf_result_err(result);
         }
 
-        convert_to_sys_prog_info(&info, &tmp.prog);
+        convert_to_sys_prog_info(&info, &prog);
         return 0;
     }
 
     case EBPF_OBJECT_LINK: {
         ExtensibleStruct<sys_bpf_link_info_t> info((void*)attr->info, (size_t)attr->info_len);
+        struct bpf_link_info link;
 
-        convert_to_link_info(&tmp.link, &info);
+        convert_to_link_info(&link, &info);
 
-        info_size = sizeof(tmp.link);
-        result = ebpf_object_get_info_by_fd((fd_t)attr->bpf_fd, &tmp.link, &info_size, NULL);
+        uint32_t info_size = sizeof(link);
+        result = ebpf_object_get_info_by_fd((fd_t)attr->bpf_fd, &link, &info_size, nullptr);
         if (result != EBPF_SUCCESS) {
             return libbpf_result_err(result);
         }
 
-        convert_to_sys_link_info(&info, &tmp.link);
+        convert_to_sys_link_info(&info, &link);
         return 0;
     }
 
@@ -386,7 +382,7 @@ bpf(int cmd, union bpf_attr* attr, unsigned int size)
 #define SYS_TO_BPF_MEM(field) memcpy(bpf->field, sys->field, sizeof(bpf->field))
 
 static void
-convert_to_map_info(struct bpf_map_info* bpf, const sys_bpf_map_info_t* sys)
+convert_to_map_info(_Out_ struct bpf_map_info* bpf, _In_ const sys_bpf_map_info_t* sys)
 {
     SYS_TO_BPF(type);
     SYS_TO_BPF(id);
@@ -398,7 +394,7 @@ convert_to_map_info(struct bpf_map_info* bpf, const sys_bpf_map_info_t* sys)
 }
 
 static void
-convert_to_sys_map_info(sys_bpf_map_info_t* sys, const struct bpf_map_info* bpf)
+convert_to_sys_map_info(_Out_ sys_bpf_map_info_t* sys, _In_ const struct bpf_map_info* bpf)
 {
     BPF_TO_SYS(type);
     BPF_TO_SYS(id);
@@ -410,41 +406,28 @@ convert_to_sys_map_info(sys_bpf_map_info_t* sys, const struct bpf_map_info* bpf)
 }
 
 static void
-convert_to_prog_info(struct bpf_prog_info* bpf, const sys_bpf_prog_info_t* sys)
+convert_to_prog_info(_Out_ struct bpf_prog_info* bpf, _In_ const sys_bpf_prog_info_t* sys)
 {
     SYS_TO_BPF(type);
     SYS_TO_BPF(id);
-    // SYS_TO_BPF_MEM(tag);
-    // SYS_TO_BPF(jited_prog_len);
-    // SYS_TO_BPF(xlated_prog_len);
-    // SYS_TO_BPF(jited_prog_insns);
-    // SYS_TO_BPF(xlated_prog_insns);
-    // SYS_TO_BPF(load_time);
-    // SYS_TO_BPF(created_by_uid);
     SYS_TO_BPF(nr_map_ids);
     SYS_TO_BPF(map_ids);
     SYS_TO_BPF_STR(name);
 }
 
 static void
-convert_to_sys_prog_info(sys_bpf_prog_info_t* sys, const struct bpf_prog_info* bpf)
+convert_to_sys_prog_info(_Out_ sys_bpf_prog_info_t* sys, _In_ const struct bpf_prog_info* bpf)
 {
+    *sys = {};
     BPF_TO_SYS(type);
     BPF_TO_SYS(id);
-    // BPF_TO_SYS_MEM(tag);
-    // BPF_TO_SYS(jited_prog_len);
-    // BPF_TO_SYS(xlated_prog_len);
-    // BPF_TO_SYS(jited_prog_insns);
-    // BPF_TO_SYS(xlated_prog_insns);
-    // BPF_TO_SYS(load_time);
-    // BPF_TO_SYS(created_by_uid);
     BPF_TO_SYS(nr_map_ids);
     BPF_TO_SYS(map_ids);
     BPF_TO_SYS_STR(name);
 }
 
 static void
-convert_to_link_info(struct bpf_link_info* bpf, const sys_bpf_link_info_t* sys)
+convert_to_link_info(_Out_ struct bpf_link_info* bpf, _In_ const sys_bpf_link_info_t* sys)
 {
     SYS_TO_BPF(type);
     SYS_TO_BPF(id);
@@ -452,7 +435,7 @@ convert_to_link_info(struct bpf_link_info* bpf, const sys_bpf_link_info_t* sys)
 }
 
 static void
-convert_to_sys_link_info(sys_bpf_link_info_t* sys, const struct bpf_link_info* bpf)
+convert_to_sys_link_info(_Out_ sys_bpf_link_info_t* sys, _In_ const struct bpf_link_info* bpf)
 {
     BPF_TO_SYS(type);
     BPF_TO_SYS(id);

@@ -6,50 +6,20 @@
 
 #define NET_EBPF_EXT_STACK_EXPANSION_SIZE 1024 * 16
 
-typedef struct _net_ebpf_ext_hook_client_rundown
-{
-    EX_RUNDOWN_REF protection;
-    bool rundown_occurred;
-} net_ebpf_ext_hook_rundown_t;
-
-struct _net_ebpf_extension_hook_provider;
-
 /**
- * @brief Data structure representing a hook NPI client (attached eBPF program). This is returned
- * as the provider binding context in the NMR client attach callback.
+ * @brief Initialize the hook rundown state.
+ *
+ * @param[in, out] rundown Pointer to the rundown object to initialize.
  */
-typedef struct _net_ebpf_extension_hook_client
+static void
+_ebpf_ext_init_hook_rundown(_Inout_ net_ebpf_ext_hook_rundown_t* rundown)
 {
-    HANDLE nmr_binding_handle;                     ///< NMR binding handle.
-    GUID client_module_id;                         ///< NMR module Id.
-    const void* client_binding_context;            ///< Client supplied context to be passed when invoking eBPF program.
-    const ebpf_extension_data_t* client_data;      ///< Client supplied attach parameters.
-    ebpf_program_invoke_function_t invoke_program; ///< Pointer to function to invoke eBPF program.
-    void* provider_data;                 ///< Opaque pointer to hook specific data associated with this client.
-    PIO_WORKITEM detach_work_item;       ///< Pointer to IO work item that is invoked to detach the client.
-    net_ebpf_ext_hook_rundown_t rundown; ///< Pointer to rundown object used to synchronize detach operation.
-} net_ebpf_extension_hook_client_t;
+    ASSERT(rundown->rundown_initialized == FALSE);
 
-typedef struct _net_ebpf_extension_hook_provider
-{
-    NPI_PROVIDER_CHARACTERISTICS characteristics;                  ///< NPI Provider characteristics.
-    net_ebpf_ext_hook_rundown_t rundown;                           ///< Rundown reference for the hook provider.
-    HANDLE nmr_provider_handle;                                    ///< NMR binding handle.
-    EX_PUSH_LOCK lock;                                             ///< Lock for serializing attach / detach calls.
-    net_ebpf_extension_hook_provider_dispatch_table_t dispatch;    ///< Hook specific dispatch table.
-    net_ebpf_extension_hook_attach_capability_t attach_capability; ///< Attach capability for specific hook provider.
-    const void* custom_data; ///< Opaque pointer to hook specific data associated for this provider.
-    _Guarded_by_(lock)
-        LIST_ENTRY filter_context_list; ///< Linked list of filter contexts that are attached to this provider.
-} net_ebpf_extension_hook_provider_t;
-
-typedef struct _net_ebpf_extension_invoke_programs_parameters
-{
-    net_ebpf_extension_wfp_filter_context_t* filter_context;
-    void* program_context;
-    uint32_t verdict;
-    ebpf_result_t result;
-} net_ebpf_extension_invoke_programs_parameters_t;
+    ExInitializeRundownProtection(&rundown->protection);
+    rundown->rundown_occurred = FALSE;
+    rundown->rundown_initialized = TRUE;
+}
 
 /**
  * @brief Initialize the hook client rundown state.
@@ -78,8 +48,7 @@ _ebpf_ext_attach_init_rundown(net_ebpf_extension_hook_client_t* hook_client)
     }
 
     // Initialize the rundown and disable new references.
-    ExInitializeRundownProtection(&rundown->protection);
-    rundown->rundown_occurred = FALSE;
+    _ebpf_ext_init_hook_rundown(rundown);
 
 Exit:
     NET_EBPF_EXT_RETURN_NTSTATUS(status);
@@ -91,11 +60,12 @@ Exit:
  * @param[in, out] rundown Rundown object to wait for.
  *
  */
-static void
-_ebpf_ext_attach_wait_for_rundown(_Inout_ net_ebpf_ext_hook_rundown_t* rundown)
+void
+_ebpf_ext_wait_for_rundown(_Inout_ net_ebpf_ext_hook_rundown_t* rundown)
 {
     NET_EBPF_EXT_LOG_ENTRY();
 
+    ASSERT(rundown->rundown_initialized == TRUE);
     ExWaitForRundownProtectionRelease(&rundown->protection);
     rundown->rundown_occurred = TRUE;
 
@@ -135,7 +105,7 @@ _net_ebpf_extension_detach_client_completion(_In_ DEVICE_OBJECT* device_object, 
     // Issue: https://github.com/microsoft/ebpf-for-windows/issues/1854
 
     // Wait for any in progress callbacks to complete.
-    _ebpf_ext_attach_wait_for_rundown(&hook_client->rundown);
+    _ebpf_ext_wait_for_rundown(&hook_client->rundown);
 
     IoFreeWorkItem(work_item);
 
@@ -146,25 +116,41 @@ _net_ebpf_extension_detach_client_completion(_In_ DEVICE_OBJECT* device_object, 
 }
 
 _Must_inspect_result_ bool
+_net_ebpf_ext_enter_rundown(_Inout_ net_ebpf_ext_hook_rundown_t* rundown)
+{
+    ASSERT(rundown->rundown_initialized == TRUE);
+    return ExAcquireRundownProtection(&rundown->protection);
+}
+
+void
+_net_ebpf_ext_leave_rundown(_Inout_ net_ebpf_ext_hook_rundown_t* rundown)
+{
+    ASSERT(rundown->rundown_initialized == TRUE);
+    ExReleaseRundownProtection(&rundown->protection);
+}
+
+_Must_inspect_result_ bool
 net_ebpf_extension_hook_client_enter_rundown(_Inout_ net_ebpf_extension_hook_client_t* hook_client)
 {
-    net_ebpf_ext_hook_rundown_t* rundown = &hook_client->rundown;
-    bool status = ExAcquireRundownProtection(&rundown->protection);
-    return status;
+    return _net_ebpf_ext_enter_rundown(&hook_client->rundown);
 }
 
 void
 net_ebpf_extension_hook_client_leave_rundown(_Inout_ net_ebpf_extension_hook_client_t* hook_client)
 {
-    net_ebpf_ext_hook_rundown_t* rundown = &hook_client->rundown;
-    ExReleaseRundownProtection(&rundown->protection);
+    _net_ebpf_ext_leave_rundown(&hook_client->rundown);
+}
+
+_Must_inspect_result_ bool
+net_ebpf_extension_hook_provider_enter_rundown(_Inout_ net_ebpf_extension_hook_provider_t* provider_context)
+{
+    return _net_ebpf_ext_enter_rundown(&provider_context->rundown);
 }
 
 void
 net_ebpf_extension_hook_provider_leave_rundown(_Inout_ net_ebpf_extension_hook_provider_t* provider_context)
 {
-    net_ebpf_ext_hook_rundown_t* rundown = &provider_context->rundown;
-    ExReleaseRundownProtection(&rundown->protection);
+    _net_ebpf_ext_leave_rundown(&provider_context->rundown);
 }
 
 const ebpf_extension_data_t*
@@ -496,7 +482,7 @@ _net_ebpf_extension_hook_provider_attach_client(
         // Check if the attach parameter is already present in the list of filter contexts.
         net_ebpf_extension_wfp_filter_context_t* matching_context = NULL;
         matching_context = net_ebpf_extension_get_matching_filter_context(
-            hook_client->client_data->header.size, hook_client->client_data->data, local_provider_context);
+            hook_client->client_data->data_size, hook_client->client_data->data, local_provider_context);
         if (matching_context != NULL) {
             // Insert the new client in the filter context.
             result = net_ebpf_ext_add_client_context(matching_context, hook_client);
@@ -529,7 +515,7 @@ _net_ebpf_extension_hook_provider_attach_client(
             // Check if the attach parameter is already present in the list of filter contexts.
             net_ebpf_extension_wfp_filter_context_t* matching_context = NULL;
             matching_context = net_ebpf_extension_get_matching_filter_context(
-                hook_client->client_data->header.size, hook_client->client_data->data, local_provider_context);
+                hook_client->client_data->data_size, hook_client->client_data->data, local_provider_context);
 
             if (matching_context != NULL) {
                 NET_EBPF_EXT_LOG_MESSAGE(
@@ -544,7 +530,7 @@ _net_ebpf_extension_hook_provider_attach_client(
 
     // No matching filter context found. Need to create a new filter context.
     // Acquire rundown reference on provider context. This will be released when the filter context is deleted.
-    rundown_acquired = ExAcquireRundownProtection(&local_provider_context->rundown.protection);
+    rundown_acquired = net_ebpf_extension_hook_provider_enter_rundown(local_provider_context);
     if (!rundown_acquired) {
         NET_EBPF_EXT_LOG_MESSAGE(
             NET_EBPF_EXT_TRACELOG_LEVEL_ERROR,
@@ -597,7 +583,7 @@ Exit:
 
     if (status != STATUS_SUCCESS) {
         if (rundown_acquired) {
-            ExReleaseRundownProtection(&local_provider_context->rundown.protection);
+            net_ebpf_extension_hook_provider_leave_rundown(local_provider_context);
         }
     }
 
@@ -610,6 +596,7 @@ _Requires_exclusive_lock_held_(provider_context->lock) static void _net_ebpf_ext
 {
     NET_EBPF_EXT_LOG_ENTRY();
 
+    // Remove the list entry from the provider's list of filter contexts.
     RemoveEntryList(&filter_context->link);
 
     // Release the filter context.
@@ -706,10 +693,8 @@ net_ebpf_extension_hook_provider_unregister(
                     NET_EBPF_EXT_TRACELOG_KEYWORD_EXTENSION, "NmrDeregisterProvider", status);
             }
         }
-        // Wait for rundown reference to become 0. This will ensure all filter contexts, hence all
-        // filter are cleaned up.
-        _ebpf_ext_attach_wait_for_rundown(&provider_context->rundown);
-        ExFreePool(provider_context);
+
+        net_ebpf_ext_add_provider_context_to_cleanup_list(provider_context);
     }
     NET_EBPF_EXT_LOG_EXIT();
 }
@@ -727,6 +712,9 @@ net_ebpf_extension_hook_provider_register(
     NPI_PROVIDER_CHARACTERISTICS* characteristics;
 
     NET_EBPF_EXT_LOG_ENTRY();
+
+    *provider_context = NULL;
+
     local_provider_context = (net_ebpf_extension_hook_provider_t*)ExAllocatePoolUninitialized(
         NonPagedPoolNx, sizeof(net_ebpf_extension_hook_provider_t), NET_EBPF_EXTENSION_POOL_TAG);
     NET_EBPF_EXT_BAIL_ON_ALLOC_FAILURE_STATUS(
@@ -735,6 +723,7 @@ net_ebpf_extension_hook_provider_register(
     memset(local_provider_context, 0, sizeof(net_ebpf_extension_hook_provider_t));
     ExInitializePushLock(&local_provider_context->lock);
     InitializeListHead(&local_provider_context->filter_context_list);
+    _ebpf_ext_init_hook_rundown(&local_provider_context->rundown);
 
     characteristics = &local_provider_context->characteristics;
     characteristics->Length = sizeof(NPI_PROVIDER_CHARACTERISTICS);
@@ -760,10 +749,6 @@ net_ebpf_extension_hook_provider_register(
         NET_EBPF_EXT_LOG_NTSTATUS_API_FAILURE(NET_EBPF_EXT_TRACELOG_KEYWORD_EXTENSION, "NmrRegisterProvider", status);
         goto Exit;
     }
-
-    // Initialize rundown protection for the provider context.
-    ExInitializeRundownProtection(&local_provider_context->rundown.protection);
-    local_provider_context->rundown.rundown_occurred = FALSE;
 
     *provider_context = local_provider_context;
     local_provider_context = NULL;

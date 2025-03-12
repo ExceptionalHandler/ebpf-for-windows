@@ -6,6 +6,7 @@
 #include "cxplat.h"
 #include "ebpf_link.h"
 #include "ebpf_maps.h"
+#include "ebpf_native.h"
 #include "ebpf_platform.h"
 #include "ebpf_program_types.h"
 #include "ebpf_protocol.h"
@@ -42,7 +43,20 @@ extern "C"
         cxplat_utf8_string_t program_info_hash_type;
     } ebpf_program_parameters_t;
 
+    typedef struct _ebpf_native_code_context
+    {
+        const program_runtime_context_t* runtime_context;
+        const ebpf_native_module_binding_context_t* native_module_context;
+    } ebpf_native_code_context_t;
+
+    typedef struct _ebpf_core_code_context
+    {
+        ebpf_native_code_context_t native_code_context;
+    } ebpf_core_code_context_t;
+
     typedef ebpf_result_t (*ebpf_program_entry_point_t)(void* context);
+    typedef ebpf_result_t (*ebpf_program_native_entry_point_t)(
+        void* context, const program_runtime_context_t* runtime_context);
 
     /**
      * @brief Initialize global state for the ebpf program module.
@@ -454,6 +468,24 @@ extern "C"
     void
     ebpf_program_get_runtime_state(
         _In_ const void* program_context, _Outptr_ const ebpf_execution_context_state_t** state);
+
+    /**
+     * @brief Query the flags set on the program.
+     *
+     * @param[in] program The program to query.
+     * @return The flags set on the program.
+     */
+    uint64_t
+    ebpf_program_get_flags(_In_ const ebpf_program_t* program);
+
+    /**
+     * @brief Set the flags on the program.
+     *
+     * @param[in] program The program to set the flags on.
+     * @param[in] flags The flags to set on the program.
+     */
+    void
+    ebpf_program_set_flags(_Inout_ ebpf_program_t* program, uint64_t flags);
 
 #ifdef __cplusplus
 }

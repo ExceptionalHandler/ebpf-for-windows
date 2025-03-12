@@ -25,6 +25,10 @@
 
 #define GET_PROGRAM_INFO_REPLY_BUFFER_SIZE 4096
 
+#ifndef GUID_NULL
+const GUID GUID_NULL = {0, 0, 0, {0, 0, 0, 0, 0, 0, 0, 0}};
+#endif
+
 static thread_local ebpf_handle_t _program_under_verification = ebpf_handle_invalid;
 
 extern bool use_ebpf_store;
@@ -226,7 +230,7 @@ Exit:
     return result;
 }
 
-const EbpfProgramType&
+_Ret_maybenull_ const EbpfProgramType*
 get_program_type_windows(const GUID& program_type)
 {
     ebpf_result_t result;
@@ -237,7 +241,7 @@ get_program_type_windows(const GUID& program_type)
     // See if we have the descriptor in the thread local cache.
     auto it = _program_descriptor_cache.find(program_type);
     if (it != _program_descriptor_cache.end()) {
-        return *_program_descriptor_cache[program_type].get();
+        return _program_descriptor_cache[program_type].get();
     }
 
     // Descriptor not found in thread local cache, try to query
@@ -251,7 +255,7 @@ get_program_type_windows(const GUID& program_type)
         result = _get_program_descriptor_from_info(program_info, &descriptor);
         if (result == EBPF_SUCCESS) {
             _program_descriptor_cache[program_type] = ebpf_program_descriptor_ptr_t(descriptor);
-            return *_program_descriptor_cache[program_type].get();
+            return _program_descriptor_cache[program_type].get();
         }
     }
 
@@ -268,7 +272,7 @@ get_program_type_windows(const GUID& program_type)
             result = _get_program_descriptor_from_info(program_info, &descriptor);
             if (result == EBPF_SUCCESS) {
                 _program_descriptor_cache[program_type] = ebpf_program_descriptor_ptr_t(descriptor);
-                return *_program_descriptor_cache[program_type].get();
+                return _program_descriptor_cache[program_type].get();
             } else {
                 throw std::runtime_error(std::string("Failed to get program descriptor.") + guid_string);
             }
@@ -327,6 +331,19 @@ ebpf_get_ebpf_attach_type(bpf_attach_type_t bpf_attach_type) noexcept
     }
 
     return nullptr;
+}
+
+_Must_inspect_result_ ebpf_result_t
+ebpf_get_ebpf_attach_type(bpf_attach_type_t bpf_attach_type, _Out_ ebpf_attach_type_t* ebpf_attach_type) noexcept
+{
+    const ebpf_attach_type_t* result = get_ebpf_attach_type(bpf_attach_type);
+    if (result == nullptr) {
+        *ebpf_attach_type = GUID_NULL;
+        return EBPF_INVALID_ARGUMENT;
+    }
+
+    *ebpf_attach_type = *result;
+    return EBPF_SUCCESS;
 }
 
 bpf_prog_type_t
@@ -420,31 +437,10 @@ get_program_type_windows(const std::string& section, const std::string&)
         }
     }
 
-    // Note: Ideally this function should throw an exception whenever a matching ProgramType
-    // is not found, but that causes a problem in the following scenario:
-    //
-    // This function is called by verifier code in 2 cases:
-    //   1. When verifying the code
-    //   2. When parsing the ELF file and unmarshalling the code.
-    // For the second case mentioned above, if the ELF file contains an unknown section name (".text", for example),
-    // and this function is called while unmarshalling that section, throwing an exception here
-    // will fail the parsing of the ELF file.
-    //
-    // Hence this function returns ProgramType for EBPF_PROGRAM_TYPE_UNSPECIFIED when verification is not
-    // in progress, and throws an exception otherwise.
     try {
-        return get_program_type_windows(*global_program_type);
+        return *get_program_type_windows(*global_program_type);
     } catch (...) {
-        if (!get_verification_in_progress()) {
-            return PTYPE("unspec", {0}, (uint64_t)&EBPF_PROGRAM_TYPE_UNSPECIFIED, {});
-        } else {
-            if (global_program_type_found) {
-                auto guid_string = guid_to_string(global_program_type);
-                throw std::runtime_error(std::string("ProgramType not found for GUID ") + guid_string);
-            } else {
-                throw std::runtime_error(std::string("ProgramType not found for section " + section));
-            }
-        }
+        return PTYPE("unspec", {0}, (uint64_t)&EBPF_PROGRAM_TYPE_UNSPECIFIED, {});
     }
 }
 

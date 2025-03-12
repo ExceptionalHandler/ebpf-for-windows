@@ -17,17 +17,21 @@ param ([Parameter(Mandatory = $false)][string] $AdminTarget = "TEST_VM",
 Push-Location $WorkingDirectory
 
 Import-Module $WorkingDirectory\common.psm1 -Force -ArgumentList ($LogFileName) -ErrorAction Stop
-
-$AdminTestVMCredential = Get-StoredCredential -Target $AdminTarget -ErrorAction Stop
-$StandardUserTestVMCredential = Get-StoredCredential -Target $StandardUserTarget -ErrorAction Stop
+if ($SelfHostedRunnerName -eq "1ESRunner") {
+    $AdminTestVMCredential = Retrieve-StoredCredential -Target $AdminTarget
+    $StandardUserTestVMCredential = Retrieve-StoredCredential -Target $StandardUserTarget
+} else {
+    $AdminTestVMCredential = Get-StoredCredential -Target $AdminTarget -ErrorAction Stop
+    $StandardUserTestVMCredential = Get-StoredCredential -Target $StandardUserTarget -ErrorAction Stop
+}
 
 # Read the test execution json.
 $Config = Get-Content ("{0}\{1}" -f $PSScriptRoot, $TestExecutionJsonFileName) | ConvertFrom-Json
 
 $Job = Start-Job -ScriptBlock {
     param ([Parameter(Mandatory = $True)] [PSCredential] $AdminTestVMCredential,
-           [Parameter(Mandatory = $True)] [PSCredential] $StandardUserTestVMCredential, 
-           [Parameter(Mandatory = $true)] [PSCustomObject] $Config, 
+           [Parameter(Mandatory = $True)] [PSCredential] $StandardUserTestVMCredential,
+           [Parameter(Mandatory = $true)] [PSCustomObject] $Config,
            [Parameter(Mandatory = $true)] [string] $SelfHostedRunnerName,
            [Parameter(Mandatory = $True)] [string] $WorkingDirectory,
            [Parameter(Mandatory = $True)] [string] $LogFileName,
@@ -59,12 +63,24 @@ $Job = Start-Job -ScriptBlock {
     # currently one VM runs per runner.
     $TestVMName = $VMList[0].Name
 
-    # Run Kernel tests on test VM.
-    Write-Log "Running kernel tests on $TestVMName"
-    Run-KernelTestsOnVM -VMName $TestVMName -Config $Config
+    try {
+        # Run Kernel tests on test VM.
+        Write-Log "Running kernel tests on $TestVMName"
+        Run-KernelTestsOnVM -VMName $TestVMName -Config $Config
 
-    # Stop eBPF components on test VMs.
-    Stop-eBPFComponentsOnVM -VMName $TestVMName
+        # Stop eBPF components on test VMs.
+        Stop-eBPFComponentsOnVM -VMName $TestVMName
+    } catch [System.Management.Automation.RemoteException] {
+        # Next, generate kernel dump.
+        Write-Log $_.Exception.Message
+        Write-Log $_.ScriptStackTrace
+        if ($_.CategoryInfo.Reason -eq "TimeoutException") {
+            Generate-KernelDumpOnVM($TestVMName)
+        }
+
+        # Throw to ensure the job is marked as failed.
+        throw $_.Exception.Message
+    }
 
     Pop-Location
 } -ArgumentList (
