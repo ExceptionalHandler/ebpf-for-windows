@@ -234,14 +234,14 @@ fd_t cmd_fd = 0;
 int
 process_creation_callback(_Inout_ void* ctx, _In_opt_ void* data, size_t size)
 {
-    char path[1024] = {};
+    char path[65520] = {};
     if ((!data) || (!size)) {
         fprintf(stderr, "NO data in data var\n");
     }
     UNREFERENCED_PARAMETER(ctx);
     process_info_t* process_info = reinterpret_cast<process_info_t*>(data);
     if (process_info->operation == (process_operation_t)PROCESS_OPERATION_CREATE) {
-        int err = bpf_map_lookup_elem(image_fd, &(process_info->process_id), &path);
+        int err = bpf_map_lookup_elem(cmd_fd, &(process_info->process_id), &path);
         if (err) {
             printf("\nFailed getting image path\n");
         }
@@ -355,7 +355,15 @@ RecvEvents2()
     MessageBox(NULL, L"START", L"Start?", MB_OK);
 
     image_fd = bpf_obj_get((char*)process_map);
+    if (image_fd == ebpf_fd_invalid) {
+        fprintf(stderr, "Failed to get  up eBPF process map\n");
+        return;
+    }
     cmd_fd = bpf_obj_get((char*)command_map);
+    if (cmd_fd == ebpf_fd_invalid) {
+        fprintf(stderr, "Failed to get  up eBPF cmd map\n");
+        return;
+    }
     fd_t ringBuf_fd = bpf_obj_get((char*)process_ringbuf);
     if (ringBuf_fd == ebpf_fd_invalid) {
         fprintf(stderr, "Failed to get  up eBPF ringbuf\n");

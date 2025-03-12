@@ -300,7 +300,21 @@ _ebpf_driver_io_device_control(
                         EBPF_TRACELOG_KEYWORD_ERROR, ebpf_core_get_protocol_handler_properties, status);
                     goto Done;
                 }
-
+                EBPF_LOG_MESSAGE_UINT64(
+                    EBPF_TRACELOG_LEVEL_ERROR,
+                    EBPF_TRACELOG_KEYWORD_ERROR,
+                    "Received Params. OP Buf Len ",
+                    output_buffer_length);
+                EBPF_LOG_MESSAGE_UINT64(
+                    EBPF_TRACELOG_LEVEL_ERROR,
+                    EBPF_TRACELOG_KEYWORD_ERROR, "IP Buf len ", input_buffer_length);
+                EBPF_LOG_MESSAGE_UINT64(
+                    EBPF_TRACELOG_LEVEL_ERROR, EBPF_TRACELOG_KEYWORD_ERROR, "ID = ", user_request->id);
+                EBPF_LOG_MESSAGE_UINT64(
+                    EBPF_TRACELOG_LEVEL_ERROR, EBPF_TRACELOG_KEYWORD_ERROR, "min req size ", minimum_request_size);
+                EBPF_LOG_MESSAGE_UINT64(
+                    EBPF_TRACELOG_LEVEL_ERROR, EBPF_TRACELOG_KEYWORD_ERROR, "minimum_reply_size ", minimum_reply_size);
+                EBPF_LOG_MESSAGE_UINT64(EBPF_TRACELOG_LEVEL_ERROR, EBPF_TRACELOG_KEYWORD_ERROR, "async ", async);    
                 // Be aware: Input and output buffer point to the same memory.
                 if (minimum_reply_size > 0) {
                     // Retrieve output buffer associated with the request object
@@ -336,7 +350,11 @@ _ebpf_driver_io_device_control(
                     WdfRequestMarkCancelable(request, _ebpf_driver_io_device_control_cancel);
                     wdf_request_ref_acquired = true;
                 }
-
+                EBPF_LOG_MESSAGE_UINT64(
+                    EBPF_TRACELOG_LEVEL_ERROR,
+                    EBPF_TRACELOG_KEYWORD_ERROR,
+                    "actual_output_length ",
+                    actual_output_length);    
                 status = ebpf_result_to_ntstatus(ebpf_core_invoke_protocol_handler(
                     user_request->id,
                     user_request,
