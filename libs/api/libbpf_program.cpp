@@ -21,6 +21,10 @@ bpf_load_program_xattr(const struct bpf_load_program_attr* load_attr, char* log_
         return libbpf_err(-EINVAL);
     }
 
+    if (load_attr->prog_flags != 0) {
+        return libbpf_err(-EINVAL);
+    }
+
     const ebpf_program_type_t* program_type = ebpf_get_ebpf_program_type(load_attr->prog_type);
     if (program_type == nullptr) {
         return libbpf_err(-EINVAL);
@@ -280,7 +284,7 @@ int
 bpf_prog_detach2(int prog_fd, int attachable_fd, enum bpf_attach_type type)
 {
     ebpf_result_t result = EBPF_SUCCESS;
-    const ebpf_attach_type_t* attach_type = get_ebpf_attach_type(type);
+    const ebpf_attach_type_t* attach_type = ebpf_get_ebpf_attach_type(type);
     if (attach_type == nullptr) {
         result = EBPF_INVALID_ARGUMENT;
         return libbpf_result_err(result);
@@ -476,7 +480,7 @@ bpf_object__unpin_programs(struct bpf_object* obj, const char* path)
 enum bpf_attach_type
 bpf_program__get_expected_attach_type(const struct bpf_program* program)
 {
-    return get_bpf_attach_type(&program->attach_type);
+    return ebpf_get_bpf_attach_type(&program->attach_type);
 }
 
 int
@@ -485,7 +489,7 @@ bpf_program__set_expected_attach_type(struct bpf_program* program, enum bpf_atta
     if (program->object->loaded) {
         return libbpf_err(-EBUSY);
     }
-    const ebpf_attach_type_t* attach_type = get_ebpf_attach_type(type);
+    const ebpf_attach_type_t* attach_type = ebpf_get_ebpf_attach_type(type);
     if (attach_type != nullptr) {
         program->attach_type = *attach_type;
     }
@@ -496,7 +500,7 @@ bpf_program__set_expected_attach_type(struct bpf_program* program, enum bpf_atta
 enum bpf_prog_type
 bpf_program__type(const struct bpf_program* program)
 {
-    return get_bpf_program_type(&program->program_type);
+    return ebpf_get_bpf_program_type(&program->program_type);
 }
 
 int
@@ -710,7 +714,7 @@ libbpf_bpf_attach_type_str(enum bpf_attach_type t)
     if (t == BPF_ATTACH_TYPE_UNSPEC) {
         return "unspec";
     }
-    const ebpf_attach_type_t* attach_type = get_ebpf_attach_type(t);
+    const ebpf_attach_type_t* attach_type = ebpf_get_ebpf_attach_type(t);
     return (attach_type == nullptr) ? nullptr : ebpf_get_attach_type_name(attach_type);
 }
 
@@ -753,5 +757,21 @@ bpf_prog_test_run_opts(int prog_fd, struct bpf_test_run_opts* opts)
     opts->retval = (uint32_t)options.return_value;
     opts->duration = (uint32_t)options.duration;
 
+    return 0;
+}
+
+__u32
+bpf_program__flags(const struct bpf_program* prog)
+{
+    return static_cast<uint32_t>(prog->flags);
+}
+
+int
+bpf_program__set_flags(struct bpf_program* prog, __u32 flags)
+{
+    if (prog->object->loaded) {
+        return libbpf_err(-EBUSY);
+    }
+    prog->flags = flags;
     return 0;
 }

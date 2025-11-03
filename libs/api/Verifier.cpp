@@ -156,7 +156,11 @@ _parse_btf_map_info_and_populate_cache(const ELFIO::elfio& reader, const vector<
 
     // For each map in map_names, find the corresponding map descriptor and cache the map handle.
     for (auto& entry : map_names) {
-        uint32_t idx = (uint32_t)btf_map_name_to_index[entry.map_name];
+        auto btf_entry = btf_map_name_to_index.find(entry.map_name);
+        if (btf_entry == btf_map_name_to_index.end()) {
+            throw std::runtime_error(string("Map ") + entry.map_name + " not found.");
+        }
+        uint32_t idx = (uint32_t)btf_entry->second;
         auto& btf_map_descriptor = btf_map_descriptors[idx];
         // We temporarily stored BTF type ids in the descriptor's fd fields.
         int btf_type_id = btf_map_descriptor.original_fd;
@@ -506,15 +510,17 @@ ebpf_api_elf_enumerate_programs(
             memset(info, 0, sizeof(*info));
 
             if (verbose) {
-                std::variant<InstructionSeq, std::string> programOrError = unmarshal(raw_program);
-                if (std::holds_alternative<std::string>(programOrError)) {
-                    std::cout << "parse failure: " << std::get<std::string>(programOrError) << "\n";
+                std::variant<InstructionSeq, std::string> instruction_sequence_or_error = unmarshal(raw_program);
+                if (std::holds_alternative<std::string>(instruction_sequence_or_error)) {
+                    std::cout << "parse failure: " << std::get<std::string>(instruction_sequence_or_error) << "\n";
                     ebpf_free(info);
                     return 1;
                 }
-                auto& program = std::get<InstructionSeq>(programOrError);
-                cfg_t controlFlowGraph = prepare_cfg(program, raw_program.info, verifier_options.cfg_opts);
-                std::map<std::string, int> stats = collect_stats(controlFlowGraph);
+                auto& instruction_sequence = std::get<InstructionSeq>(instruction_sequence_or_error);
+                // auto program = crab::prepare_cfg(program, raw_program.info, verifier_options.cfg_opts);
+                auto program =
+                    Program::from_sequence(instruction_sequence, raw_program.info, verifier_options.cfg_opts);
+                std::map<std::string, int> stats = collect_stats(program);
                 for (auto it = stats.rbegin(); it != stats.rend(); ++it) {
                     _ebpf_add_stat(info, it->first, it->second);
                 }
@@ -631,17 +637,17 @@ ebpf_api_elf_disassemble_section(
     return ebpf_api_elf_disassemble_program(file, section, {}, disassembly, error_message);
 }
 
-static uint32_t
-_ebpf_api_elf_verify_program_from_stream(
+static _Success_(return == 0) uint32_t _ebpf_api_elf_verify_program_from_stream(
     std::istream& stream,
-    const char* stream_name,
-    const char* section_name,
-    const char* program_name,
+    _In_z_ const char* stream_name,
+    _In_opt_z_ const char* section_name, // Section name, or null to look in all sections.
+    _In_opt_z_ const char* program_name, // Program name, or null to use the first program.
     ebpf_verification_verbosity_t verbosity,
-    const char** report,
-    const char** error_message,
-    ebpf_api_verifier_stats_t* stats) noexcept
+    _Outptr_result_maybenull_z_ const char** report,
+    _Outptr_result_maybenull_z_ const char** error_message,
+    _Out_opt_ ebpf_api_verifier_stats_t* stats) noexcept
 {
+    ebpf_api_verifier_stats_t stats_buffer;
     std::ostringstream error;
     std::ostringstream output;
     *report = nullptr;
@@ -659,7 +665,8 @@ _ebpf_api_elf_verify_program_from_stream(
         if (!stream) {
             throw std::runtime_error(std::string("No such file or directory opening ") + stream_name);
         }
-        auto raw_programs = read_elf(stream, stream_name, section_name, verifier_options, platform);
+        auto raw_programs =
+            read_elf(stream, stream_name, (section_name != nullptr ? section_name : ""), verifier_options, platform);
         std::optional<raw_program> found_program;
         for (auto& program : raw_programs) {
             if ((program_name == nullptr) || (program.function_name == program_name)) {
@@ -682,6 +689,11 @@ _ebpf_api_elf_verify_program_from_stream(
             return 1;
         }
         auto& program = std::get<InstructionSeq>(programOrError);
+
+        if (stats == nullptr) {
+            // ebpf_verify_program() requires stats to be non-null.
+            stats = &stats_buffer;
+        }
 
         verifier_options.verbosity_opts.simplify = false;
         bool res = ebpf_verify_program(output, program, raw_program.info, verifier_options, stats);
@@ -766,7 +778,6 @@ static _Success_(return == 0) uint32_t _verify_program_from_string(
     ebpf_clear_thread_local_storage();
 
     set_global_program_and_attach_type(program_type, nullptr);
-    _verification_in_progress_helper helper;
     return _ebpf_api_elf_verify_program_from_stream(
         stream, name, section_name, program_name, verbosity, report, error_message, stats);
 }

@@ -119,6 +119,7 @@ _IRQL_requires_max_(PASSIVE_LEVEL) ebpf_result_t ebpf_reference_base_object_by_h
         *object = _ebpf_handle_table[handle];
         return_value = EBPF_SUCCESS;
     } else {
+        EBPF_LOG_MESSAGE_UINT64(EBPF_TRACELOG_LEVEL_CRITICAL, EBPF_TRACELOG_KEYWORD_BASE, "Invalid handle******  ", handle);
         return_value = EBPF_INVALID_OBJECT;
     }
 

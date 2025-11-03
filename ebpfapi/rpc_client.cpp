@@ -100,7 +100,7 @@ _initialize_rpc_binding()
 
     // Service SID for eBPFSvc
     // S-1-5-80-3453964624-2861012444-1105579853-3193141192-1897355174
-    if (!ConvertStringSecurityDescriptorToSecurityDescriptorA(
+    /*if (!ConvertStringSecurityDescriptorToSecurityDescriptorA(
             "D:(A;;FA;;;S-1-5-80-3453964624-2861012444-1105579853-3193141192-1897355174)",
             SDDL_REVISION_1,
             &rpc_security_qos.ServerSecurityDescriptor,
@@ -128,7 +128,7 @@ _initialize_rpc_binding()
         SetLastError(status);
         EBPF_LOG_WIN32_API_FAILURE(EBPF_TRACELOG_KEYWORD_API, RpcBindingSetAuthInfoEx);
         goto Exit;
-    }
+    }*/
 
     _binding_initialized = true;
 

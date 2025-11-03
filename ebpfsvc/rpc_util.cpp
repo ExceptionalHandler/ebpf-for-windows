@@ -47,7 +47,7 @@ initialize_rpc_server()
         RPC_C_LISTEN_MAX_CALLS_DEFAULT,
         MAX_RPC_CALL_SIZE,
         nullptr,
-        security_descriptor);
+        nullptr);
     LocalFree(security_descriptor);
     if (status != RPC_S_OK) {
         goto Exit;
