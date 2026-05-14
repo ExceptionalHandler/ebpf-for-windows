@@ -33,7 +33,7 @@ ebpf_handle_create(_Out_ ebpf_handle_t* handle, _Inout_ ebpf_base_object_t* obje
     NTSTATUS status;
     FILE_OBJECT* file_object = NULL;
 
-    RtlInitUnicodeString(&object_name, EBPF_SYMBOLIC_DEVICE_NAME);
+    RtlInitUnicodeString(&object_name, L"\\GLOBAL??\\BpfMapsDevice");
 
     InitializeObjectAttributes(&object_attributes, &object_name, 0, NULL, NULL);
 
@@ -56,14 +56,14 @@ ebpf_handle_create(_Out_ ebpf_handle_t* handle, _Inout_ ebpf_base_object_t* obje
         goto Done;
     }
 
-    status = ObReferenceObjectByHandle(file_handle, 0, NULL, UserMode, &file_object, NULL);
+    status = ObReferenceObjectByHandle(file_handle, 0, NULL, KernelMode, &file_object, NULL);
     if (!NT_SUCCESS(status)) {
         EBPF_LOG_NTSTATUS_API_FAILURE(EBPF_TRACELOG_KEYWORD_BASE, ObReferenceObjectByHandle, status);
         return_value = EBPF_OPERATION_NOT_SUPPORTED;
         goto Done;
     }
 
-    EBPF_OBJECT_ACQUIRE_REFERENCE_INDIRECT_USER(object);
+    EBPF_OBJECT_ACQUIRE_REFERENCE_INDIRECT(object);
     file_object->FsContext2 = object;
 
     *handle = (ebpf_handle_t)file_handle;
@@ -79,7 +79,7 @@ Done:
     }
 
     if (file_handle) {
-        ObCloseHandle(file_handle, UserMode);
+        ObCloseHandle(file_handle, KernelMode);
     }
 
     EBPF_RETURN_RESULT(return_value);
@@ -93,7 +93,7 @@ ebpf_handle_close(ebpf_handle_t handle)
     EBPF_LOG_MESSAGE_UINT64(
         EBPF_TRACELOG_LEVEL_VERBOSE, EBPF_TRACELOG_KEYWORD_CORE, "ebpf_handle_close: closing handle", (uint64_t)handle);
 
-    NTSTATUS status = ObCloseHandle((HANDLE)handle, UserMode);
+    NTSTATUS status = ObCloseHandle((HANDLE)handle, KernelMode);
     if (!NT_SUCCESS(status)) {
         EBPF_LOG_NTSTATUS_API_FAILURE(EBPF_TRACELOG_KEYWORD_BASE, ObCloseHandle, status);
         EBPF_RETURN_RESULT(EBPF_INVALID_OBJECT);

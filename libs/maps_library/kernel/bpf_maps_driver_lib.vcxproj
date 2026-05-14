@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Label="Globals">
+    <SolutionDir Condition="'$(SolutionDir)' == ''">$(MSBuildProjectDirectory)\..\..\..\</SolutionDir>
+    <ProjectGuid>{8E9F1A2B-3C4D-5E6F-7D8C-9A1B2C3D4E5F}</ProjectGuid>
+    <RootNamespace>bpf_maps_driver_lib</RootNamespace>
+  </PropertyGroup>
+
+  <!-- Default Platform to x64 when invoked without -p:Platform=... -->
+  <PropertyGroup Condition="'$(Platform)'=='' or '$(Platform)'=='Win32'">
+    <Platform>x64</Platform>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'==''">
+    <Configuration>Debug</Configuration>
+  </PropertyGroup>
+
+  <Import Project="$(SolutionDir)wdk.props" />
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <PlatformToolset>WindowsKernelModeDriver10.0</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+    <DriverType>KMDF</DriverType>
+    <DriverTargetPlatform>Universal</DriverTargetPlatform>
+    <TargetVersion>Windows10</TargetVersion>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)'=='Debug'">
+    <UseDebugLibraries>true</UseDebugLibraries>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)'=='Release'">
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <CustomDeviceName Condition="'$(CustomDeviceName)' == ''">BpfMapsDevice</CustomDeviceName>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>
+        $(ProjectDir)..\common;
+        $(SolutionDir)include;
+        $(SolutionDir)libs\execution_context;
+        $(SolutionDir)libs\runtime;
+        $(SolutionDir)libs\runtime\kernel;
+        $(SolutionDir)libs\platform;
+        $(SolutionDir)libs\shared;
+        $(SolutionDir)libs\shared\kernel;
+        $(SolutionDir)libs\api_common;
+        $(SolutionDir)external\usersim\cxplat\inc;
+        $(SolutionDir)external\usersim\cxplat\inc\winkernel;
+        %(AdditionalIncludeDirectories)
+      </AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>
+        BPF_MAPS_KERNEL_MODE;
+        BPF_MAPS_DEVICE_NAME_KERNEL=L"\\Device\\$(CustomDeviceName)";
+        BPF_MAPS_SYMBOLIC_LINK=L"\\DosDevices\\$(CustomDeviceName)";
+        EBPF_FILE_ID=EBPF_FILE_ID_MAPS;
+        %(PreprocessorDefinitions)
+      </PreprocessorDefinitions>
+      <WarningLevel>Level3</WarningLevel>
+      <TreatWarningAsError>false</TreatWarningAsError>
+    </ClCompile>
+  </ItemDefinitionGroup>
+
+  <ItemGroup>
+    <ClCompile Include="bpf_maps_core.c" />
+    <ClCompile Include="bpf_maps_protocol.c" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ClInclude Include="bpf_maps_driver.h" />
+    <ClInclude Include="..\common\bpf_maps_common.h" />
+    <ClInclude Include="..\common\bpf_maps_protocol.h" />
+    <ClInclude Include="..\common\bpf_maps_config.h" />
+  </ItemGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>
