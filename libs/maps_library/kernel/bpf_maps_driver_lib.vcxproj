@@ -73,10 +73,13 @@
   <ItemGroup>
     <ClCompile Include="bpf_maps_core.c" />
     <ClCompile Include="bpf_maps_protocol.c" />
+    <ClCompile Include="maps_handle_kernel.c" />
+    <ClCompile Include="bpf_maps_wdf_init.c" />
   </ItemGroup>
 
   <ItemGroup>
     <ClInclude Include="bpf_maps_driver.h" />
+    <ClInclude Include="maps_handle.h" />
     <ClInclude Include="..\common\bpf_maps_common.h" />
     <ClInclude Include="..\common\bpf_maps_protocol.h" />
     <ClInclude Include="..\common\bpf_maps_config.h" />

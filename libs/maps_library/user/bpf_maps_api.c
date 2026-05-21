@@ -180,7 +180,7 @@ int bpf_map_lookup_elem(
     }
 
     // Build request
-    uint32_t request_size = sizeof(bpf_map_lookup_request_t) + desc->key_size - 1;
+    uint32_t request_size = offsetof(bpf_map_lookup_request_t, key) + desc->key_size ;
     bpf_map_lookup_request_t* request = (bpf_map_lookup_request_t*)malloc(request_size);
     if (!request) {
         return -1;
@@ -191,12 +191,13 @@ int bpf_map_lookup_elem(
     memcpy(request->key, key, desc->key_size);
 
     // Allocate reply buffer
-    uint32_t reply_size = sizeof(bpf_map_lookup_reply_t) + desc->value_size - 1;
+    uint32_t reply_size = offsetof(bpf_map_lookup_reply_t, value) + desc->value_size ;
     bpf_map_lookup_reply_t* reply = (bpf_map_lookup_reply_t*)malloc(reply_size);
     if (!reply) {
         free(request);
         return -1;
     }
+    printf("\nReply Size = %d\n", reply_size);
 
     // Send IOCTL
     DWORD bytes_returned = 0;

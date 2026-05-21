@@ -423,8 +423,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "win-c", "external\ubpf\buil
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ubpf_fuzzer", "external\ubpf\build_fuzzer\libfuzzer\ubpf_fuzzer.vcxproj", "{FAF1A1C2-A24E-3591-8012-90772087CD3A}"
 	ProjectSection(ProjectDependencies) = postProject
-		{F6CF1C41-731B-397F-BE89-1A882B5975C1} = {F6CF1C41-731B-397F-BE89-1A882B5975C1}
 		{55FF9B28-F3A2-465B-9E35-D154F2380581} = {55FF9B28-F3A2-465B-9E35-D154F2380581}
+		{F6CF1C41-731B-397F-BE89-1A882B5975C1} = {F6CF1C41-731B-397F-BE89-1A882B5975C1}
 	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ubpf_fuzzer_post_build", "scripts\ubpf_fuzzer_post_build\ubpf_fuzzer_post_build.vcxproj", "{3D563E44-B7D0-499C-A15C-C1C1B9A73B6F}"
@@ -435,6 +435,9 @@ EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "bpf_maps_driver_lib", "libs\maps_library\kernel\bpf_maps_driver_lib.vcxproj", "{8E9F1A2B-3C4D-5E6F-7D8C-9A1B2C3D4E5F}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "sample_maps_driver", "samples\maps_standalone\driver\sample_maps_driver.vcxproj", "{9F1A2B3C-4D5E-6F7D-8C9A-1B2C3D4E5F6A}"
+	ProjectSection(ProjectDependencies) = postProject
+		{3C4D6F2A-1B7E-4E9F-9D8C-5A3B2C1D4E5F} = {3C4D6F2A-1B7E-4E9F-9D8C-5A3B2C1D4E5F}
+	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "sample_maps_app", "samples\maps_standalone\app\sample_maps_app.vcxproj", "{7D9C4E5F-2A3B-4C6D-8E9F-1A2B3C4D5E6F}"
 EndProject

@@ -38,11 +38,25 @@ extern "C" {
 #define IOCTL_BPF_GET_PROCESS_MAP \
     CTL_CODE(FILE_DEVICE_NETWORK, 0x910, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
+// Sample-specific: fetch the handle of the driver-owned process events ring buffer.
+#define IOCTL_BPF_GET_PROCESS_RINGBUF \
+    CTL_CODE(FILE_DEVICE_NETWORK, 0x911, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
 typedef struct _bpf_get_process_map_reply {
     uint64_t map_handle;
     uint32_t key_size;
     uint32_t value_size;
 } bpf_get_process_map_reply_t;
+
+typedef struct _bpf_get_process_ringbuf_reply {
+    uint64_t map_handle;
+} bpf_get_process_ringbuf_reply_t;
+
+// Process event structure written to ring buffer
+typedef struct _process_event {
+    uint32_t pid;
+    uint64_t start_time;  // FILETIME
+} process_event_t;
 
 // Protocol structures
 

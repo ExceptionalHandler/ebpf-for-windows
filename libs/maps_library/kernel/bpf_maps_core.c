@@ -10,7 +10,7 @@
 #include "ebpf_platform.h"
 #include "ebpf_core_structs.h"
 #include "ebpf_epoch.h"
-#include "ebpf_handle.h"
+#include "maps_handle.h"
 #include "ebpf_maps.h"
 #include "ebpf_random.h"
 #include "ebpf_object.h"
@@ -18,6 +18,27 @@
 
 // Include our header last
 #include "bpf_maps_driver.h"
+
+// Macro for referencing objects by handle with type checking
+#define MAPS_OBJECT_REFERENCE_BY_HANDLE(handle, type, object) \
+    maps_object_reference_by_handle(handle, type, object, EBPF_FILE_ID, __LINE__)
+
+static inline ebpf_result_t
+maps_object_reference_by_handle(
+    maps_handle_t handle,
+    ebpf_object_type_t object_type,
+    _Outptr_ ebpf_core_object_t** object,
+    uint32_t file_id,
+    uint32_t line)
+{
+    return maps_reference_base_object_by_handle(
+        handle,
+        _maps_object_compare,
+        &object_type,
+        (ebpf_base_object_t**)object,
+        file_id,
+        line);
+}
 
 // Helper to convert our map types to eBPF map types
 static ebpf_result_t
@@ -115,7 +136,7 @@ bpf_maps_library_init(void)
         goto Done;
     }
     // Initialize handle table
-    result = ebpf_handle_table_initiate();
+    result = maps_handle_table_initiate();
     if (result != EBPF_SUCCESS) {
         status = _ebpf_to_ntstatus(result);
         ebpf_object_tracking_terminate();
@@ -155,7 +176,7 @@ bpf_maps_library_cleanup(void)
     if (!g_maps_library_initialized) {
         return;
     }
-    ebpf_handle_table_terminate();
+    maps_handle_table_terminate();
     ebpf_object_tracking_terminate();
     ebpf_maps_terminate();
     ebpf_epoch_terminate();
@@ -210,9 +231,9 @@ bpf_map_create_km(
         return _ebpf_to_ntstatus(result);
     }
 
-    // Create a handle for the map. 
+    // Create a handle for the map.
     //ToDo: Use correct symblic name
-    result = ebpf_handle_create(&handle, (ebpf_base_object_t*)map);
+    result = maps_handle_create(&handle, (ebpf_base_object_t*)map);
     if (result != EBPF_SUCCESS) {
         // Release the map object reference
         EBPF_OBJECT_RELEASE_REFERENCE((ebpf_core_object_t*)map);
@@ -223,6 +244,7 @@ bpf_map_create_km(
     EBPF_OBJECT_RELEASE_REFERENCE((ebpf_core_object_t*)map);
 
     *map_handle = (uint64_t)handle;
+
     return STATUS_SUCCESS;
 }
 
@@ -247,7 +269,7 @@ bpf_map_lookup_elem_km(
     }
 
     // Get the map object from the handle
-    result = EBPF_OBJECT_REFERENCE_BY_HANDLE(
+    result = MAPS_OBJECT_REFERENCE_BY_HANDLE(
         (ebpf_handle_t)map_handle,
         EBPF_OBJECT_MAP,
         (ebpf_core_object_t**)&map);
@@ -302,7 +324,7 @@ bpf_map_update_elem_km(
     }
 
     // Get the map object from the handle
-    result = EBPF_OBJECT_REFERENCE_BY_HANDLE(
+    result = MAPS_OBJECT_REFERENCE_BY_HANDLE(
         (ebpf_handle_t)map_handle,
         EBPF_OBJECT_MAP,
         (ebpf_core_object_t**)&map);
@@ -345,7 +367,7 @@ bpf_map_delete_elem_km(
     }
 
     // Get the map object from the handle
-    result = EBPF_OBJECT_REFERENCE_BY_HANDLE(
+    result = MAPS_OBJECT_REFERENCE_BY_HANDLE(
         (ebpf_handle_t)map_handle,
         EBPF_OBJECT_MAP,
         (ebpf_core_object_t**)&map);
@@ -387,7 +409,7 @@ bpf_map_get_next_key_km(
     }
 
     // Get the map object from the handle
-    result = EBPF_OBJECT_REFERENCE_BY_HANDLE(
+    result = MAPS_OBJECT_REFERENCE_BY_HANDLE(
         (ebpf_handle_t)map_handle,
         EBPF_OBJECT_MAP,
         (ebpf_core_object_t**)&map);
@@ -416,7 +438,7 @@ bpf_map_close_km(
     }
 
     // Close the handle (this releases the map object reference)
-    result = ebpf_handle_close((ebpf_handle_t)map_handle);
+    result = maps_handle_close((maps_handle_t)map_handle);
 
     return _ebpf_to_ntstatus(result);
 }

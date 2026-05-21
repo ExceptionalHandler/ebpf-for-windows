@@ -95,6 +95,33 @@ bpf_maps_handle_ioctl(
     _In_ ULONG output_length,
     _Out_ PULONG bytes_returned);
 
+// WDF initialization utility
+// Include WDF headers if not already included
+#ifndef _WDFDEVICE_H_
+// Forward declarations for when WDF headers are not included
+typedef void* WDFDEVICE;
+typedef void* PWDFDEVICE_INIT;
+typedef void (*PFN_WDF_IO_QUEUE_IO_DEVICE_CONTROL)(void*, void*, size_t, size_t, unsigned long);
+typedef void (*PFN_WDF_DRIVER_UNLOAD)(void*);
+#endif
+
+typedef struct _bpf_maps_wdf_config
+{
+    const wchar_t* device_name;
+    const wchar_t* symbolic_link;
+    void* io_device_control_callback;  // PFN_WDF_IO_QUEUE_IO_DEVICE_CONTROL
+    void* unload_callback;  // PFN_WDF_DRIVER_UNLOAD
+} bpf_maps_wdf_config_t;
+
+_Must_inspect_result_
+NTSTATUS
+bpf_maps_wdf_initialize(
+    _In_ void* DriverObject,  // PDRIVER_OBJECT
+    _In_ void* RegistryPath,  // PUNICODE_STRING
+    _In_ const bpf_maps_wdf_config_t* config,
+    _Out_ void** device_out,  // WDFDEVICE*
+    _Out_ void** device_object_out);  // DEVICE_OBJECT**
+
 #ifdef __cplusplus
 }
 #endif

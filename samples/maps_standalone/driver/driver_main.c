@@ -16,13 +16,16 @@
 #include "ebpf_tracelog.h"
 
 #define PROCESS_MAP_MAX_ENTRIES 4096
-#define PROCESS_IMAGE_MAX_BYTES 520  // 260 WCHARs, matches MAX_PATH
+#define PROCESS_IMAGE_MAX_BYTES 1024  // 260 WCHARs, matches MAX_PATH
+#define PROCESS_RINGBUF_SIZE (64 * 1024)  // 64KB ring buffer
 
 static uint64_t g_process_map_handle = 0;
+static uint64_t g_process_ringbuf_handle = 0;
 static BOOLEAN g_process_callback_registered = FALSE;
 
 // Device object pointer required by eBPF runtime
 static DEVICE_OBJECT* _bpf_maps_driver_device_object = NULL;
+static WDFDEVICE g_wdf_device = NULL;
 
 _Ret_notnull_ DEVICE_OBJECT*
 ebpf_driver_get_device_object(void)
@@ -43,7 +46,6 @@ ebpf_driver_get_device_object(void)
 DRIVER_INITIALIZE DriverEntry;
 EVT_WDF_DRIVER_UNLOAD DriverUnload;
 EVT_WDF_IO_QUEUE_IO_DEVICE_CONTROL EvtIoDeviceControl;
-EVT_WDF_FILE_CLOSE EvtFileClose;
 
 static void
 ProcessNotifyCallback(
@@ -67,6 +69,11 @@ ProcessNotifyCallback(
             RtlCopyMemory(image_path, CreateInfo->ImageFileName->Buffer, copy_bytes);
         }
 
+        // Get process start time
+        LARGE_INTEGER create_time;
+        KeQuerySystemTime(&create_time);
+
+        // Add to hash map (PID -> image path)
         NTSTATUS status = bpf_map_update_elem_km(
             g_process_map_handle,
             &pid, sizeof(pid),
@@ -78,30 +85,42 @@ ProcessNotifyCallback(
                 "bpf_map_update_elem_km",
                 status);
         } else {
-            EBPF_LOG_MESSAGE(EBPF_TRACELOG_LEVEL_INFO, EBPF_TRACELOG_KEYWORD_BASE, "HO Gaya Ho Gaya?")
+            EBPF_LOG_MESSAGE_UINT64(
+                EBPF_TRACELOG_LEVEL_INFO,
+                EBPF_TRACELOG_KEYWORD_BASE,
+                "Process created, pid",
+                pid);
+        }
+
+        // Send event to ring buffer (PID + start time)
+        if (g_process_ringbuf_handle != 0) {
+            process_event_t event;
+            event.pid = pid;
+            event.start_time = create_time.QuadPart;
+
+            status = bpf_map_update_elem_km(
+                g_process_ringbuf_handle,
+                NULL, 0,  // Ring buffer doesn't use key
+                &event, sizeof(event),
+                0);
+            if (!NT_SUCCESS(status)) {
+                EBPF_LOG_NTSTATUS_API_FAILURE(
+                    EBPF_TRACELOG_KEYWORD_MAP,
+                    "bpf_map_update_elem_km (ringbuf)",
+                    status);
+            }
         }
     } else {
         // Process exit: remove entry.
         (void)bpf_map_delete_elem_km(g_process_map_handle, &pid, sizeof(pid));
+        EBPF_LOG_MESSAGE_UINT64(
+            EBPF_TRACELOG_LEVEL_INFO,
+            EBPF_TRACELOG_KEYWORD_BASE,
+            "Process deleted, pid",
+            pid);
     }
 }
 
-
-
-void
-EvtFileClose(_In_ WDFFILEOBJECT FileObject)
-{
-    FILE_OBJECT* file_object = WdfFileObjectWdmGetFileObject(FileObject);
-
-    EBPF_LOG_MESSAGE_UINT64(
-        EBPF_TRACELOG_LEVEL_INFO,
-        EBPF_TRACELOG_KEYWORD_BASE,
-        "EvtFileClose: Releasing eBPF object reference from FsContext2",
-        (uint64_t)file_object->FsContext2);
-
-    bpf_maps_library_close_context(file_object->FsContext2);
-    file_object->FsContext2 = NULL;
-}
 
 // The C runtime queries the file type via GetFileType when creating a file
 // descriptor. GetFileType queries volume information to get device type via
@@ -141,134 +160,51 @@ DriverEntry(
     _In_ PUNICODE_STRING RegistryPath)
 {
     NTSTATUS status;
-    WDF_DRIVER_CONFIG config;
-    WDFDRIVER driver = NULL;
-    PWDFDEVICE_INIT device_init = NULL;
-    WDFDEVICE device = NULL;
-    WDF_IO_QUEUE_CONFIG queue_config;
-    WDFQUEUE queue = NULL;
-    UNICODE_STRING device_name;
-    UNICODE_STRING symbolic_link;
     NTSTATUS trace_status;
-    WDF_OBJECT_ATTRIBUTES attributes;
-    WDF_FILEOBJECT_CONFIG file_object_config;
 
     // Initialize trace logging (best effort - don't fail driver load if tracing unavailable)
     trace_status = ebpf_trace_initiate();
     if (!NT_SUCCESS(trace_status)) {
-        // Fall back to KdPrint for this critical error
         KdPrint(("BPF Maps Driver: WARNING - Failed to initialize trace logging: 0x%08X\n", trace_status));
-        // Continue driver initialization - tracing is not critical
     }
 
     EBPF_LOG_ENTRY();
 
+    // Initialize maps library
     status = bpf_maps_library_init();
     if (!NT_SUCCESS(status)) {
         EBPF_LOG_NTSTATUS_API_FAILURE(
             EBPF_TRACELOG_KEYWORD_BASE,
             "bpf_maps_library_init",
             status);
+        ebpf_trace_terminate();
         return status;
     }
 
-    WDF_DRIVER_CONFIG_INIT(&config, WDF_NO_EVENT_CALLBACK);
-    config.DriverInitFlags |= WdfDriverInitNonPnpDriver;
-    config.EvtDriverUnload = DriverUnload;
+    // Initialize WDF using utility function
+    bpf_maps_wdf_config_t wdf_config;
+    wdf_config.device_name = BPF_MAPS_DEVICE_NAME_KERNEL;
+    wdf_config.symbolic_link = BPF_MAPS_SYMBOLIC_LINK;
+    wdf_config.io_device_control_callback = EvtIoDeviceControl;
+    wdf_config.unload_callback = DriverUnload;
 
-    status = WdfDriverCreate(DriverObject, RegistryPath, WDF_NO_OBJECT_ATTRIBUTES, &config, &driver);
+    status = bpf_maps_wdf_initialize(
+        DriverObject,
+        RegistryPath,
+        &wdf_config,
+        &g_wdf_device,
+        &_bpf_maps_driver_device_object);
     if (!NT_SUCCESS(status)) {
         EBPF_LOG_NTSTATUS_API_FAILURE(
-            EBPF_TRACELOG_KEYWORD_API,
-            "WdfDriverCreate",
+            EBPF_TRACELOG_KEYWORD_BASE,
+            "bpf_maps_wdf_initialize",
             status);
         bpf_maps_library_cleanup();
         ebpf_trace_terminate();
-
         return status;
     }
 
-    device_init = WdfControlDeviceInitAllocate(driver, &SDDL_DEVOBJ_SYS_ALL_ADM_ALL);
-    if (device_init == NULL) {
-        EBPF_LOG_MESSAGE(
-            EBPF_TRACELOG_LEVEL_ERROR,
-            EBPF_TRACELOG_KEYWORD_API,
-            "WdfControlDeviceInitAllocate failed");
-        bpf_maps_library_cleanup();
-        ebpf_trace_terminate();
-
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-    WdfDeviceInitSetDeviceType(device_init, FILE_DEVICE_NULL);
-    WdfDeviceInitSetCharacteristics(device_init, FILE_DEVICE_SECURE_OPEN, FALSE);
-    WdfDeviceInitSetCharacteristics(device_init, FILE_AUTOGENERATED_DEVICE_NAME, TRUE);
-    RtlInitUnicodeString(&device_name, BPF_MAPS_DEVICE_NAME_KERNEL);
-    status = WdfDeviceInitAssignName(device_init, &device_name);
-    if (!NT_SUCCESS(status)) {
-        EBPF_LOG_NTSTATUS_API_FAILURE(
-            EBPF_TRACELOG_KEYWORD_API,
-            "WdfDeviceInitAssignName",
-            status);
-        WdfDeviceInitFree(device_init);
-        bpf_maps_library_cleanup();
-        ebpf_trace_terminate();
-
-        return status;
-    }
-
-    // Configure file object cleanup to properly release eBPF object references
-    WDF_FILEOBJECT_CONFIG_INIT(&file_object_config, WDF_NO_EVENT_CALLBACK, EvtFileClose, WDF_NO_EVENT_CALLBACK);
-    WdfDeviceInitSetFileObjectConfig(device_init, &file_object_config, WDF_NO_OBJECT_ATTRIBUTES);
-
-    WDF_OBJECT_ATTRIBUTES_INIT(&attributes);
-    attributes.SynchronizationScope = WdfSynchronizationScopeNone;
-
-    status = WdfDeviceCreate(&device_init, WDF_NO_OBJECT_ATTRIBUTES, &device);
-    if (!NT_SUCCESS(status)) {
-        EBPF_LOG_NTSTATUS_API_FAILURE(
-            EBPF_TRACELOG_KEYWORD_API,
-            "WdfDeviceCreate",
-            status);
-        WdfDeviceInitFree(device_init);
-        bpf_maps_library_cleanup();
-        ebpf_trace_terminate();
-
-        return status;
-    }
-
-    _bpf_maps_driver_device_object = WdfDeviceWdmGetDeviceObject(device);
-
-    RtlInitUnicodeString(&symbolic_link, BPF_MAPS_SYMBOLIC_LINK);
-    status = WdfDeviceCreateSymbolicLink(device, &symbolic_link);
-    if (!NT_SUCCESS(status)) {
-        EBPF_LOG_NTSTATUS_API_FAILURE(
-            EBPF_TRACELOG_KEYWORD_API,
-            "WdfDeviceCreateSymbolicLink",
-            status);
-        bpf_maps_library_cleanup();
-        ebpf_trace_terminate();
-
-        return status;
-    }
-
-    WDF_IO_QUEUE_CONFIG_INIT_DEFAULT_QUEUE(&queue_config, WdfIoQueueDispatchSequential);
-    queue_config.EvtIoDeviceControl = EvtIoDeviceControl;
-
-    status = WdfIoQueueCreate(device, &queue_config, WDF_NO_OBJECT_ATTRIBUTES, &queue);
-    if (!NT_SUCCESS(status)) {
-        EBPF_LOG_NTSTATUS_API_FAILURE(
-            EBPF_TRACELOG_KEYWORD_API,
-            "WdfIoQueueCreate",
-            status);
-        bpf_maps_library_cleanup();
-        ebpf_trace_terminate();
-
-        return status;
-    }
-
-    WdfControlFinishInitializing(device);
-
-    // Create the process-tracking map.
+    // Create the process-tracking hash map (PID -> image path)
     status = bpf_map_create_km(
         1,  // BPF_MAP_TYPE_HASH
         "process_map", sizeof("process_map") - 1,
@@ -279,39 +215,65 @@ DriverEntry(
     if (!NT_SUCCESS(status)) {
         EBPF_LOG_NTSTATUS_API_FAILURE(
             EBPF_TRACELOG_KEYWORD_MAP,
-            "bpf_map_create_km",
+            "bpf_map_create_km (hash map)",
             status);
-        WdfObjectDelete(device);
         bpf_maps_library_cleanup();
         ebpf_trace_terminate();
-
         return status;
     }
 
-    //// Register the process creation/exit callback.
-    //status = PsSetCreateProcessNotifyRoutineEx(ProcessNotifyCallback, FALSE);
-    //if (!NT_SUCCESS(status)) {
-    //    EBPF_LOG_NTSTATUS_API_FAILURE(
-    //        EBPF_TRACELOG_KEYWORD_API,
-    //        "PsSetCreateProcessNotifyRoutineEx",
-    //        status);
-    //   (void)bpf_map_close_km(g_process_map_handle);
-    //    g_process_map_handle = 0;
-    //    bpf_maps_library_cleanup();
-    //    ebpf_trace_terminate();
 
-    //    return status;
-    //}
-    //g_process_callback_registered = TRUE;
+    // Create the process events ring buffer (PID + start time)
+    status = bpf_map_create_km(
+        13,  // BPF_MAP_TYPE_RINGBUF
+        "process_events", sizeof("process_events") - 1,
+        0,  // Ring buffers don't have keys
+        0,  // Ring buffers don't have fixed value size
+        PROCESS_RINGBUF_SIZE,
+        &g_process_ringbuf_handle);
+    if (!NT_SUCCESS(status)) {
+        EBPF_LOG_NTSTATUS_API_FAILURE(
+            EBPF_TRACELOG_KEYWORD_MAP,
+            "bpf_map_create_km (ring buffer)",
+            status);
+        //bpf_maps_library_cleanup();
+        ebpf_trace_terminate();
+        return status;
+    }
+
+    // Register the process creation/exit callback
+    status = PsSetCreateProcessNotifyRoutineEx(ProcessNotifyCallback, FALSE);
+    if (!NT_SUCCESS(status)) {
+        EBPF_LOG_NTSTATUS_API_FAILURE(
+            EBPF_TRACELOG_KEYWORD_API,
+            "PsSetCreateProcessNotifyRoutineEx",
+            status);
+        goto Cleanup;
+    }
+    g_process_callback_registered = TRUE;
 
     EBPF_LOG_MESSAGE(
         EBPF_TRACELOG_LEVEL_INFO,
         EBPF_TRACELOG_KEYWORD_BASE,
         "BPF Maps Driver loaded successfully");
 
-    EBPF_LOG_MESSAGE(EBPF_TRACELOG_LEVEL_INFO, EBPF_TRACELOG_KEYWORD_BASE, "Returning Zero")
-
     return STATUS_SUCCESS;
+
+Cleanup:
+    if (g_process_ringbuf_handle != 0) {
+        //(void)bpf_map_close_km(g_process_ringbuf_handle);
+        //g_process_ringbuf_handle = 0;
+    }
+    if (g_process_map_handle != 0) {
+        (void)bpf_map_close_km(g_process_map_handle);
+        g_process_map_handle = 0;
+    }
+    if (g_wdf_device != NULL) {
+        WdfObjectDelete(g_wdf_device);
+    }
+    bpf_maps_library_cleanup();
+    ebpf_trace_terminate();
+    return status;
 }
 
 void
@@ -330,17 +292,21 @@ DriverUnload(
         EBPF_TRACELOG_KEYWORD_BASE,
         "DriverUnload: Step 1 - Unregistering process callback");
 
-    // Unregister the callback BEFORE closing the map so no in-flight
-    // callback can touch a stale map handle.
-   /* if (g_process_callback_registered) {
+    // Unregister the callback BEFORE closing maps
+    if (g_process_callback_registered) {
         (void)PsSetCreateProcessNotifyRoutineEx(ProcessNotifyCallback, TRUE);
         g_process_callback_registered = FALSE;
-    }*/
+    }
 
     EBPF_LOG_MESSAGE(
         EBPF_TRACELOG_LEVEL_INFO,
         EBPF_TRACELOG_KEYWORD_BASE,
-        "DriverUnload: Step 2 - Closing map handle");
+        "DriverUnload: Step 2 - Closing map handles");
+
+    if (g_process_ringbuf_handle != 0) {
+        (void)bpf_map_close_km(g_process_ringbuf_handle);
+        g_process_ringbuf_handle = 0;
+    }
 
     if (g_process_map_handle != 0) {
         (void)bpf_map_close_km(g_process_map_handle);
@@ -401,50 +367,66 @@ EvtIoDeviceControl(
 
 
 
-    //// Get output buffer if present
-    //if (OutputBufferLength > 0) {
-    //    status = WdfRequestRetrieveOutputBuffer(
-    //        Request,
-    //        OutputBufferLength,
-    //        &output_buffer,
-    //        &output_length);
+    // Get output buffer if present
+    if (OutputBufferLength > 0) {
+        status = WdfRequestRetrieveOutputBuffer(
+            Request,
+            OutputBufferLength,
+            &output_buffer,
+            &output_length);
 
-    //    if (!NT_SUCCESS(status)) {
-    //        EBPF_LOG_NTSTATUS_API_FAILURE(
-    //            EBPF_TRACELOG_KEYWORD_API,
-    //            "WdfRequestRetrieveOutputBuffer",
-    //            status);
-    //        WdfRequestComplete(Request, status);
-    //        return;
-    //    }
-    //}
+        if (!NT_SUCCESS(status)) {
+            EBPF_LOG_NTSTATUS_API_FAILURE(
+                EBPF_TRACELOG_KEYWORD_API,
+                "WdfRequestRetrieveOutputBuffer",
+                status);
+            WdfRequestComplete(Request, status);
+            return;
+        }
+    }
 
-    //// Sample-specific IOCTL: hand the driver-owned process map's handle to user mode.
-    //if (IoControlCode == IOCTL_BPF_GET_PROCESS_MAP) {
-    //    if (output_buffer == NULL || output_length < sizeof(bpf_get_process_map_reply_t)) {
-    //        status = STATUS_BUFFER_TOO_SMALL;
-    //    } else if (g_process_map_handle == 0) {
-    //        status = STATUS_DEVICE_NOT_READY;
-    //    } else {
-    //        bpf_get_process_map_reply_t* reply = (bpf_get_process_map_reply_t*)output_buffer;
-    //        reply->map_handle = g_process_map_handle;
-    //        reply->key_size = sizeof(uint32_t);
-    //        reply->value_size = PROCESS_IMAGE_MAX_BYTES;
-    //        bytes_returned = sizeof(*reply);
-    //        status = STATUS_SUCCESS;
-    //    }
-    //    WdfRequestCompleteWithInformation(Request, status, bytes_returned);
-    //    return;
-    //}
+    // Sample-specific IOCTL: hand the driver-owned process map's handle to user mode.
+    if (IoControlCode == IOCTL_BPF_GET_PROCESS_MAP) {
+        if (output_buffer == NULL || output_length < sizeof(bpf_get_process_map_reply_t)) {
+            status = STATUS_BUFFER_TOO_SMALL;
+        } else if (g_process_map_handle == 0) {
+            status = STATUS_DEVICE_NOT_READY;
+        } else {
+            bpf_get_process_map_reply_t* reply = (bpf_get_process_map_reply_t*)output_buffer;
+            reply->map_handle = g_process_map_handle;
+            reply->key_size = sizeof(uint32_t);
+            reply->value_size = PROCESS_IMAGE_MAX_BYTES;
+            bytes_returned = sizeof(*reply);
+            status = STATUS_SUCCESS;
+        }
+        WdfRequestCompleteWithInformation(Request, status, bytes_returned);
+        return;
+    }
 
-    ////// Delegate everything else to the maps library IOCTL handler
-    //status = bpf_maps_handle_ioctl(
-    //    IoControlCode,
-    //    input_buffer,
-    //    (ULONG)input_length,
-    //    output_buffer,
-    //    (ULONG)output_length,
-    //    &bytes_returned);
+    // Sample-specific IOCTL: hand the driver-owned process ring buffer's handle to user mode.
+    if (IoControlCode == IOCTL_BPF_GET_PROCESS_RINGBUF) {
+        if (output_buffer == NULL || output_length < sizeof(bpf_get_process_ringbuf_reply_t)) {
+            status = STATUS_BUFFER_TOO_SMALL;
+        } else if (g_process_ringbuf_handle == 0) {
+            status = STATUS_DEVICE_NOT_READY;
+        } else {
+            bpf_get_process_ringbuf_reply_t* reply = (bpf_get_process_ringbuf_reply_t*)output_buffer;
+            reply->map_handle = g_process_ringbuf_handle;
+            bytes_returned = sizeof(*reply);
+            status = STATUS_SUCCESS;
+        }
+        WdfRequestCompleteWithInformation(Request, status, bytes_returned);
+        return;
+    }
+
+    //// Delegate everything else to the maps library IOCTL handler
+    status = bpf_maps_handle_ioctl(
+        IoControlCode,
+        input_buffer,
+        (ULONG)input_length,
+        output_buffer,
+        (ULONG)output_length,
+        &bytes_returned);
 
     // Complete the request
     WdfRequestCompleteWithInformation(Request, status, bytes_returned);

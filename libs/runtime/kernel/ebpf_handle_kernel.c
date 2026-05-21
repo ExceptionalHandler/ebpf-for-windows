@@ -63,15 +63,27 @@ ebpf_handle_create(_Out_ ebpf_handle_t* handle, _Inout_ ebpf_base_object_t* obje
         goto Done;
     }
 
+    EBPF_LOG_MESSAGE_UINT64(
+        EBPF_TRACELOG_LEVEL_INFO,
+        EBPF_TRACELOG_KEYWORD_CORE,
+        "ebpf_handle_create: object fscontext before",
+        (uint64_t)file_object->FsContext2);
+
     EBPF_OBJECT_ACQUIRE_REFERENCE_INDIRECT(object);
     file_object->FsContext2 = object;
+
+     EBPF_LOG_MESSAGE_UINT64(
+        EBPF_TRACELOG_LEVEL_INFO,
+        EBPF_TRACELOG_KEYWORD_CORE,
+        "ebpf_handle_create: object fscontext after",
+        (uint64_t)file_object->FsContext2);
 
     *handle = (ebpf_handle_t)file_handle;
     file_handle = 0;
     return_value = EBPF_SUCCESS;
 
     EBPF_LOG_MESSAGE_UINT64(
-        EBPF_TRACELOG_LEVEL_VERBOSE, EBPF_TRACELOG_KEYWORD_CORE, "ebpf_handle_create: returning handle", *handle);
+        EBPF_TRACELOG_LEVEL_INFO, EBPF_TRACELOG_KEYWORD_CORE, "ebpf_handle_create: returning handle", *handle);
 
 Done:
     if (file_object) {

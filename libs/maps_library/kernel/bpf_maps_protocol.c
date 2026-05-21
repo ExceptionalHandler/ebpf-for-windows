@@ -1,7 +1,12 @@
 // Copyright (c) eBPF for Windows contributors
 // SPDX-License-Identifier: MIT
 
+#define EBPF_FILE_ID EBPF_FILE_ID_MAPS
+
+// Include ntifs.h BEFORE ntddk.h to avoid PEPROCESS/PETHREAD redefinition errors
+#include <ntifs.h>
 #include <ntddk.h>
+#include "ebpf_tracelog.h"
 #include "bpf_maps_driver.h"
 #include "../common/bpf_maps_protocol.h"
 
@@ -56,20 +61,48 @@ bpf_maps_handle_ioctl(
         bpf_map_lookup_request_t* request = (bpf_map_lookup_request_t*)input_buffer;
         bpf_map_lookup_reply_t* reply = (bpf_map_lookup_reply_t*)output_buffer;
 
+        EBPF_LOG_MESSAGE(
+            EBPF_TRACELOG_LEVEL_INFO,
+            EBPF_TRACELOG_KEYWORD_MAP,
+            "Protocol: IOCTL_BPF_MAP_LOOKUP received");
+
         if (input_length < sizeof(bpf_map_lookup_request_t) ||
             output_length < sizeof(bpf_map_lookup_reply_t)) {
+            EBPF_LOG_MESSAGE_UINT64_UINT64(
+                EBPF_TRACELOG_LEVEL_ERROR,
+                EBPF_TRACELOG_KEYWORD_MAP,
+                "Protocol: LOOKUP buffer too small",
+                input_length,
+                output_length);
             return STATUS_BUFFER_TOO_SMALL;
         }
 
         if (request == NULL || reply == NULL) {
+            EBPF_LOG_MESSAGE(
+                EBPF_TRACELOG_LEVEL_ERROR,
+                EBPF_TRACELOG_KEYWORD_MAP,
+                "Protocol: LOOKUP null buffer");
             return STATUS_INVALID_PARAMETER;
         }
 
         // Calculate actual sizes based on variable-length data
-        ULONG expected_input_size = sizeof(bpf_map_lookup_request_t) + request->key_size - 1;
+        ULONG expected_input_size = FIELD_OFFSET(bpf_map_lookup_request_t, key) + request->key_size ;
         if (input_length < expected_input_size) {
+            EBPF_LOG_MESSAGE_UINT64_UINT64(
+                EBPF_TRACELOG_LEVEL_ERROR,
+                EBPF_TRACELOG_KEYWORD_MAP,
+                "Protocol: LOOKUP input too small for key",
+                input_length,
+                expected_input_size);
             return STATUS_BUFFER_TOO_SMALL;
         }
+
+        EBPF_LOG_MESSAGE_UINT64_UINT64(
+            EBPF_TRACELOG_LEVEL_INFO,
+            EBPF_TRACELOG_KEYWORD_MAP,
+            "Protocol: LOOKUP calling bpf_map_lookup_elem_km, handle and key_size",
+            request->map_handle,
+            request->key_size);
 
         status = bpf_map_lookup_elem_km(
             request->map_handle,
@@ -82,6 +115,16 @@ bpf_maps_handle_ioctl(
             // Get the actual value size from the map
             reply->value_size = output_length - FIELD_OFFSET(bpf_map_lookup_reply_t, value);
             *bytes_returned = FIELD_OFFSET(bpf_map_lookup_reply_t, value) + reply->value_size;
+            EBPF_LOG_MESSAGE_UINT64(
+                EBPF_TRACELOG_LEVEL_INFO,
+                EBPF_TRACELOG_KEYWORD_MAP,
+                "Protocol: LOOKUP succeeded, bytes_returned",
+                *bytes_returned);
+        } else {
+            EBPF_LOG_NTSTATUS_API_FAILURE(
+                EBPF_TRACELOG_KEYWORD_MAP,
+                "bpf_map_lookup_elem_km",
+                status);
         }
 
         break;
@@ -90,11 +133,25 @@ bpf_maps_handle_ioctl(
     case IOCTL_BPF_MAP_UPDATE: {
         bpf_map_update_request_t* request = (bpf_map_update_request_t*)input_buffer;
 
+        EBPF_LOG_MESSAGE(
+            EBPF_TRACELOG_LEVEL_INFO,
+            EBPF_TRACELOG_KEYWORD_MAP,
+            "Protocol: IOCTL_BPF_MAP_UPDATE received");
+
         if (input_length < sizeof(bpf_map_update_request_t)) {
+            EBPF_LOG_MESSAGE_UINT64(
+                EBPF_TRACELOG_LEVEL_ERROR,
+                EBPF_TRACELOG_KEYWORD_MAP,
+                "Protocol: UPDATE buffer too small",
+                input_length);
             return STATUS_BUFFER_TOO_SMALL;
         }
 
         if (request == NULL) {
+            EBPF_LOG_MESSAGE(
+                EBPF_TRACELOG_LEVEL_ERROR,
+                EBPF_TRACELOG_KEYWORD_MAP,
+                "Protocol: UPDATE null buffer");
             return STATUS_INVALID_PARAMETER;
         }
 
@@ -103,12 +160,25 @@ bpf_maps_handle_ioctl(
                                     request->key_size +
                                     request->value_size - 1;
         if (input_length < expected_input_size) {
+            EBPF_LOG_MESSAGE_UINT64_UINT64(
+                EBPF_TRACELOG_LEVEL_ERROR,
+                EBPF_TRACELOG_KEYWORD_MAP,
+                "Protocol: UPDATE input too small",
+                input_length,
+                expected_input_size);
             return STATUS_BUFFER_TOO_SMALL;
         }
 
         // Key is at data[0], value follows immediately after key
         const void* key = request->data;
         const void* value = request->data + request->key_size;
+
+        EBPF_LOG_MESSAGE_UINT64_UINT64(
+            EBPF_TRACELOG_LEVEL_INFO,
+            EBPF_TRACELOG_KEYWORD_MAP,
+            "Protocol: UPDATE calling bpf_map_update_elem_km, handle and key_size",
+            request->map_handle,
+            request->key_size);
 
         status = bpf_map_update_elem_km(
             request->map_handle,
@@ -117,6 +187,18 @@ bpf_maps_handle_ioctl(
             value,
             request->value_size,
             request->flags);
+
+        if (NT_SUCCESS(status)) {
+            EBPF_LOG_MESSAGE(
+                EBPF_TRACELOG_LEVEL_INFO,
+                EBPF_TRACELOG_KEYWORD_MAP,
+                "Protocol: UPDATE succeeded");
+        } else {
+            EBPF_LOG_NTSTATUS_API_FAILURE(
+                EBPF_TRACELOG_KEYWORD_MAP,
+                "bpf_map_update_elem_km",
+                status);
+        }
 
         // No reply data for update
         *bytes_returned = 0;
