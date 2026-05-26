@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Label="Globals">
+    <SolutionDir Condition="'$(SolutionDir)' == ''">$(MSBuildProjectDirectory)\..\</SolutionDir>
+    <ProjectGuid>{9F1A2B3C-4D5E-6F7D-8C9A-1B2C3D4E5F6A}</ProjectGuid>
+    <RootNamespace>sample_maps_driver</RootNamespace>
+  </PropertyGroup>
+  <!-- Default Platform to x64 when invoked without -p:Platform=... -->
+  <PropertyGroup Condition="'$(Platform)'=='' or '$(Platform)'=='Win32'">
+    <Platform>x64</Platform>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'==''">
+    <Configuration>Debug</Configuration>
+  </PropertyGroup>
+  <Import Project="$(SolutionDir)wdk.props" />
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>Driver</ConfigurationType>
+    <DriverType>KMDF</DriverType>
+    <PlatformToolset>WindowsKernelModeDriver10.0</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'=='Debug'">
+    <UseDebugLibraries>true</UseDebugLibraries>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'=='Release'">
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+  </PropertyGroup>
+  <PropertyGroup>
+    <CAExcludePath>$(WDKContentRoot)</CAExcludePath>
+    <!-- We run our own signing step (see SignSampleDriver target below), so
+         disable the WDK's built-in signing which expects a specific cert. -->
+    <SignMode>Off</SignMode>
+    <TestCertPath>$(MSBuildProjectDirectory)\sample_maps_driver_test.pfx</TestCertPath>
+    <TestCertSubject>CN=sample_maps_driver_test</TestCertSubject>
+    <TestCertPassword>sample_maps_driver</TestCertPassword>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>
+        $(SolutionDir)kernel_lib;
+        $(SolutionDir)common;
+        $(SolutionDir)..\libs\shared;
+        $(SolutionDir)..\libs\shared\kernel;
+        $(SolutionDir)..\include;
+        $(SolutionDir)..\external\ebpf-verifier\src;
+        $(SolutionDir)..\external\usersim\cxplat\inc;
+        $(SolutionDir)..\external\usersim\cxplat\inc\winkernel;
+        %(AdditionalIncludeDirectories)
+      </AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>
+        %(PreprocessorDefinitions)
+      </PreprocessorDefinitions>
+      <WarningLevel>Level3</WarningLevel>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <DisableSpecificWarnings>4062</DisableSpecificWarnings>
+      <AdditionalOptions>/wd4062 %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>
+        $(KernelBufferOverflowLib);
+        $(DDK_LIB_PATH)ntoskrnl.lib;
+        $(DDK_LIB_PATH)hal.lib;
+        $(DDK_LIB_PATH)wmilib.lib;
+        $(DDK_LIB_PATH)wdmsec.lib;
+        $(DDK_LIB_PATH)netio.lib;
+        $(DDK_LIB_PATH)ksecdd.lib;
+        $(DDK_LIB_PATH)aux_klib.lib;
+        $(KMDF_LIB_PATH)\$(KMDF_VER_PATH)\WdfLdr.lib;
+        $(KMDF_LIB_PATH)\$(KMDF_VER_PATH)\WdfDriverEntry.lib;
+        $(SolutionDir)..\x64\$(Configuration)\execution_context_kernel.lib;
+        $(SolutionDir)..\x64\$(Configuration)\runtime_kernel.lib;
+        $(SolutionDir)..\x64\$(Configuration)\ubpf_kernel.lib;
+        $(SolutionDir)..\x64\$(Configuration)\cxplat_winkernel.lib;
+        $(SolutionDir)..\x64\$(Configuration)\shared_kernel.lib;
+        %(AdditionalDependencies)
+      </AdditionalDependencies>
+      <TreatLinkerWarningAsErrors>true</TreatLinkerWarningAsErrors>
+      <!-- Required for PsSetCreateProcessNotifyRoutineEx: marks the image
+           with IMAGE_DLLCHARACTERISTICS_FORCE_INTEGRITY so the kernel
+           accepts the extended process-notify registration. -->
+      <AdditionalOptions>/INTEGRITYCHECK %(AdditionalOptions)</AdditionalOptions>
+    </Link>
+    <DriverSign>
+      <FileDigestAlgorithm>SHA256</FileDigestAlgorithm>
+    </DriverSign>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="driver_main.c" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="$(SolutionDir)kernel_lib\bpf_maps_driver_lib.vcxproj">
+      <Project>{8E9F1A2B-3C4D-5E6F-7D8C-9A1B2C3D4E5F}</Project>
+    </ProjectReference>
+  </ItemGroup>
+  <!-- Disable auto-included resources -->
+  <ItemGroup>
+    <ResourceCompile Remove="$(SolutionDir)resource\ebpf_resource.rc" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <!-- Post-build: generate a self-signed test cert (once) and sign the .sys with it.
+       Requires test-signing mode enabled on the target machine:
+           bcdedit /set testsigning on
+       After the first build, the cert's public key (.cer) is left next to the .pfx;
+       install it into LocalMachine\Root and LocalMachine\TrustedPublisher on the
+       target machine before loading the driver. -->
+  <Target Name="SignSampleDriver" AfterTargets="Link" Condition="'$(ConfigurationType)'=='Driver'">
+    <PropertyGroup>
+      <SignToolPath>$(WindowsSdkVerBinPath)$(Platform)\signtool.exe</SignToolPath>
+      <SignToolPath Condition="!Exists('$(SignToolPath)')">$(WindowsSdkDir)bin\$(TargetPlatformVersion)\$(Platform)\signtool.exe</SignToolPath>
+    </PropertyGroup>
+    <!-- Generate a self-signed test code-signing cert if it doesn't already exist. -->
+    <Exec Condition="!Exists('$(TestCertPath)')" Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -Command &quot;$cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject '$(TestCertSubject)' -CertStoreLocation Cert:\CurrentUser\My -KeyUsage DigitalSignature -KeyExportPolicy Exportable -NotAfter (Get-Date).AddYears(5); $pw = ConvertTo-SecureString -String '$(TestCertPassword)' -Force -AsPlainText; Export-PfxCertificate -Cert $cert -FilePath '$(TestCertPath)' -Password $pw | Out-Null; Export-Certificate -Cert $cert -FilePath '$(TestCertPath).cer' | Out-Null; Remove-Item $cert.PSPath&quot;" />
+    <!-- Sign the output .sys with SHA256. Try with a public timestamp first;
+         if the timestamp server is unreachable, fall back to unsigned timestamp. -->
+    <Exec Command="&quot;$(SignToolPath)&quot; sign /f &quot;$(TestCertPath)&quot; /p $(TestCertPassword) /fd SHA256 /t http://timestamp.digicert.com &quot;$(TargetPath)&quot;" IgnoreExitCode="true" IgnoreStandardErrorWarningFormat="true" ContinueOnError="WarnAndContinue">
+      <Output TaskParameter="ExitCode" PropertyName="SignExitCode" />
+    </Exec>
+    <Exec Condition="'$(SignExitCode)'!='0'" Command="&quot;$(SignToolPath)&quot; sign /f &quot;$(TestCertPath)&quot; /p $(TestCertPassword) /fd SHA256 &quot;$(TargetPath)&quot;" IgnoreExitCode="true" IgnoreStandardErrorWarningFormat="true" ContinueOnError="WarnAndContinue" />
+  </Target>
+</Project>

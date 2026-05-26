@@ -8,7 +8,7 @@
 #include <signal.h>
 #include "bpf_maps_api.h"
 #include "bpf_ringbuf_api.h"
-#include "../../../libs/maps_library/common/bpf_maps_protocol.h"
+#include "bpf_maps_protocol.h"
 
 // Must match the symbolic link the sample driver creates.
 #define SAMPLE_DEVICE_NAME L"\\\\.\\BpfMapsDevice"

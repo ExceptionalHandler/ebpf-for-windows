@@ -39,9 +39,9 @@
   <ItemDefinitionGroup>
     <ClCompile>
       <AdditionalIncludeDirectories>
-        $(ProjectDir)..\..\..\libs\maps_library\user;
-        $(ProjectDir)..\..\..\libs\maps_library\common;
-        $(ProjectDir)..\..\..\include;
+        $(ProjectDir)..\user_lib;
+        $(ProjectDir)..\common;
+        $(ProjectDir)..\..\include;
         %(AdditionalIncludeDirectories)
       </AdditionalIncludeDirectories>
       <PreprocessorDefinitions>
@@ -64,7 +64,7 @@
     <ClCompile Include="app_main.c" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\..\libs\maps_library\user\bpf_maps_api.vcxproj">
+    <ProjectReference Include="..\user_lib\bpf_maps_api.vcxproj">
       <Project>{3c4d6f2a-1b7e-4e9f-9d8c-5a3b2c1d4e5f}</Project>
     </ProjectReference>
   </ItemGroup>
