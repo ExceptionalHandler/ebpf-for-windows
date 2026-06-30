@@ -266,6 +266,7 @@ main(int argc, char** argv)
             std::cerr << "ELF file is invalid" << std::endl;
             return 1;
         }
+        MessageBoxW(NULL, L"OK", L"OK", MB_OK);
 
         // Capture list of programs.
         ebpf_api_program_info_t* infos = nullptr;
@@ -317,6 +318,7 @@ main(int argc, char** argv)
                     &error_message,
                     &stats) != 0) {
                 report = ((report == nullptr) ? "" : report);
+                report = "";
                 throw std::runtime_error(
                     std::string("Verification failed for ") + std::string(program->program_name) +
                     std::string(" with error ") + std::string(error_message) + std::string("\n Report:\n") +

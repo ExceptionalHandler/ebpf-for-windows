@@ -14,11 +14,11 @@ RTL_QUERY_REGISTRY_ROUTINE static _bpf2c_query_registry_routine;
 
 #define metadata_table ___METADATA_TABLE___##_metadata_table
 
-static GUID _bpf2c_npi_id = {/* c847aac8-a6f2-4b53-aea3-f4a94b9a80cb */
-                             0xc847aac8,
-                             0xa6f2,
-                             0x4b53,
-                             {0xae, 0xa3, 0xf4, 0xa9, 0x4b, 0x9a, 0x80, 0xcb}};
+static GUID _bpf2c_npi_id = {/* a1b2c3d4-e5f6-4708-9a0b-1c2d3e4f5061 */
+                             0xa1b2c3d4,
+                             0xe5f6,
+                             0x4708,
+                             {0x9a, 0x0b, 0x1c, 0x2d, 0x3e, 0x4f, 0x50, 0x61}};
 static NPI_MODULEID _bpf2c_module_id = {sizeof(_bpf2c_module_id), MIT_GUID, {0}};
 static HANDLE _bpf2c_nmr_client_handle;
 static HANDLE _bpf2c_nmr_provider_handle;
